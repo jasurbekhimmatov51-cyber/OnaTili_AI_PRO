@@ -1,4 +1,5 @@
 const UPSTREAM_ORIGIN = 'https://onatili-ai-preview-jasurbek.stunningmarmalade1.chatgpt.site';
+const GOOGLE_SITE_VERIFICATION = '<meta name="google-site-verification" content="tAe0xjOHXQAKMkkyr35u-87czrq7-coUl0yhjV7_Z2U" />';
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -40,6 +41,11 @@ function forwardedHeaders(request) {
 
 function textResponse(contentType) {
   return /^(text\/html|text\/plain|application\/xml|text\/xml)/i.test(contentType || '');
+}
+
+function injectGoogleVerification(html) {
+  if (html.includes('tAe0xjOHXQAKMkkyr35u-87czrq7-coUl0yhjV7_Z2U')) return html;
+  return html.replace(/<\/head>/i, `${GOOGLE_SITE_VERIFICATION}</head>`);
 }
 
 function copiedHeaders(response, origin) {
@@ -85,7 +91,8 @@ export default {
     const contentType = upstream.headers.get('content-type') || '';
 
     if (textResponse(contentType)) {
-      const body = (await upstream.text()).replaceAll(UPSTREAM_ORIGIN, origin);
+      let body = (await upstream.text()).replaceAll(UPSTREAM_ORIGIN, origin);
+      if (/^text\/html/i.test(contentType)) body = injectGoogleVerification(body);
       return new Response(body, { status: upstream.status, headers });
     }
 
