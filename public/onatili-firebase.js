@@ -30,11 +30,13 @@ const STATE = {
   db: null,
   user: null,
   isAdmin: false,
+  adminUnlocked: false,
   communityQuestions: [],
   contentReady: false
 };
 
 const PENDING_KEY = 'onatili_firebase_pending_records_v1';
+const ADMIN_UNLOCK_KEY = 'onatili_admin_unlock_uid_v1';
 const $ = (selector, scope = document) => scope.querySelector(selector);
 const $$ = (selector, scope = document) => [...scope.querySelectorAll(selector)];
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
@@ -118,11 +120,13 @@ function isCurrentResultsPage() {
 
 async function updateAdminStatus() {
   STATE.isAdmin = false;
+  STATE.adminUnlocked = false;
   if (!STATE.user || !STATE.db) return;
   try {
     // Firestore rules allow this aggregate only for the configured admin.
     await getCountFromServer(collection(STATE.db, 'profiles'));
     STATE.isAdmin = true;
+    STATE.adminUnlocked = sessionStorage.getItem(ADMIN_UNLOCK_KEY) === STATE.user.uid;
   } catch {
     // Other signed-in users do not receive admin UI or privileges.
   }
@@ -133,6 +137,10 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'onatili-firebase-styles';
   style.textContent = `
+    /* Chap menyu ekrandan baland bo‘lsa, u barcha qurilmalarda mustaqil skroll qilinadi. */
+    #sidebar.sidebar{height:100vh!important;height:100dvh!important;max-height:100vh!important;max-height:100dvh!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;box-sizing:border-box;padding-bottom:calc(22px + env(safe-area-inset-bottom))!important;scroll-padding-bottom:28px;scrollbar-width:thin;scrollbar-color:rgba(177,155,255,.55) transparent}
+    #sidebar::-webkit-scrollbar{width:6px}#sidebar::-webkit-scrollbar-thumb{background:rgba(177,155,255,.55);border-radius:999px}
+    #sidebar .nav,#sidebar .sidebar-bottom{flex:none!important}
     .firebase-banner{display:flex;align-items:center;gap:12px;margin:0 0 18px;padding:13px 16px;border:1px solid rgba(156,133,255,.42);background:linear-gradient(135deg,rgba(86,67,157,.28),rgba(23,33,65,.75));border-radius:16px;color:#e9e4ff}.firebase-banner b{color:#bbaaff}.firebase-banner button{margin-left:auto;border:0;background:transparent;color:#ded7ff;font-size:20px;cursor:pointer}
     .cloud-results-head,.community-hero,.admin-hero{padding:24px;border-radius:22px;background:linear-gradient(135deg,#30275d,#172348);border:1px solid rgba(180,160,255,.32);margin-bottom:18px}.cloud-results-head h2,.community-hero h2,.admin-hero h2{margin:6px 0;color:#fff}.cloud-results-head p,.community-hero p,.admin-hero p{color:#bec6df;margin:6px 0 0}.cloud-results-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
     .cloud-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.cloud-kpi{padding:18px;border-radius:16px;background:#17203c;border:1px solid #2a3656}.cloud-kpi b{display:block;color:#fff;font-size:27px}.cloud-kpi span{color:#aeb9d5;font-size:13px}
@@ -143,6 +151,57 @@ function injectStyles() {
     @media(max-width:760px){.cloud-kpis,.admin-grid{grid-template-columns:1fr}.community-grid,.admin-layout{grid-template-columns:1fr}.admin-form .option-grid{grid-template-columns:1fr}.cloud-record{align-items:flex-start;flex-direction:column}.firebase-banner{align-items:flex-start}.firebase-banner button{margin-left:0}}
   `;
   document.head.append(style);
+}
+
+async function unlockAdminPanel(password) {
+  if (!STATE.isAdmin || !STATE.user || !password) return false;
+  try {
+    const response = await fetch('/api/admin-unlock', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.unlocked) return false;
+    STATE.adminUnlocked = true;
+    sessionStorage.setItem(ADMIN_UNLOCK_KEY, STATE.user.uid);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showAdminPasswordForm() {
+  if (!STATE.isAdmin) {
+    notify('Bu bo‘lim faqat admin uchun.', true);
+    return;
+  }
+  const modal = $('#authModal');
+  if (!modal) return;
+  modal.hidden = false;
+  modal.innerHTML = `<div class="modal-backdrop" id="firebaseCloseBackdrop"></div><div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="adminPasswordTitle"><button id="firebaseClose" class="modal-close" aria-label="Yopish">×</button><div class="brand modal-brand"><span class="brand-mark">O<span>✦</span></span><div><strong>OnaTili<span class="logo-ai">AI</span></strong><small>ADMIN HIMOYASI</small></div></div><h2 id="adminPasswordTitle">Admin panelni ochish</h2><p>Google akkauntingiz tasdiqlandi. Davom etish uchun admin parolini kiriting.</p><form class="google-account-actions" id="adminPasswordForm"><label class="google-account-note" for="adminPasswordInput">Admin paroli<input class="input" id="adminPasswordInput" name="password" type="password" inputmode="numeric" autocomplete="current-password" required></label><p id="adminPasswordError" class="community-feedback" role="alert"></p><button class="btn primary wide" type="submit">Panelni ochish</button></form></div>`;
+  $('#firebaseClose')?.addEventListener('click', closeModal);
+  $('#firebaseCloseBackdrop')?.addEventListener('click', closeModal);
+  $('#adminPasswordForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = $('#adminPasswordInput');
+    const button = $('button[type="submit"]', event.currentTarget);
+    const error = $('#adminPasswordError');
+    if (!input || !button) return;
+    button.disabled = true;
+    button.textContent = 'Tekshirilmoqda…';
+    const unlocked = await unlockAdminPanel(input.value);
+    if (!unlocked) {
+      if (error) error.textContent = 'Parol noto‘g‘ri. Qayta urinib ko‘ring.';
+      input.value = '';
+      input.focus();
+      button.disabled = false;
+      button.textContent = 'Panelni ochish';
+      return;
+    }
+    closeModal();
+    openAdminPage();
+  });
 }
 
 function appModalMarkup() {
@@ -181,8 +240,10 @@ function refreshAccountUi() {
     openResultsPage();
   });
   $('#firebaseOpenAdmin')?.addEventListener('click', () => {
-    closeModal();
-    openAdminPage();
+    if (STATE.adminUnlocked) {
+      closeModal();
+      openAdminPage();
+    } else showAdminPasswordForm();
   });
 }
 
@@ -221,6 +282,8 @@ async function startGoogleLogin() {
 async function logout() {
   try {
     await signOut(STATE.auth);
+    STATE.adminUnlocked = false;
+    sessionStorage.removeItem(ADMIN_UNLOCK_KEY);
     closeModal();
     notify('Google hisobidan chiqdingiz.');
     if (isCurrentResultsPage()) renderCloudResults();
@@ -470,6 +533,10 @@ function ensureAdminPage() {
 function openAdminPage() {
   if (!STATE.isAdmin) {
     notify('Bu bo‘lim faqat admin uchun.', true);
+    return;
+  }
+  if (!STATE.adminUnlocked) {
+    showAdminPasswordForm();
     return;
   }
   ensureAdminPage();
