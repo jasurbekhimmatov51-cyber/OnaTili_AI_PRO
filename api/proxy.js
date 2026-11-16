@@ -48,6 +48,11 @@ function injectGoogleVerification(html) {
   return html.replace(/<\/head>/i, `${GOOGLE_SITE_VERIFICATION}</head>`);
 }
 
+function injectFirebaseClient(html) {
+  if (html.includes('/onatili-firebase.js')) return html;
+  return html.replace(/<\/body>/i, '<script type="module" src="/onatili-firebase.js"></script></body>');
+}
+
 function copiedHeaders(response, origin) {
   const headers = new Headers();
   for (const [key, value] of response.headers) {
@@ -92,7 +97,10 @@ export default {
 
     if (textResponse(contentType)) {
       let body = (await upstream.text()).replaceAll(UPSTREAM_ORIGIN, origin);
-      if (/^text\/html/i.test(contentType)) body = injectGoogleVerification(body);
+      if (/^text\/html/i.test(contentType)) {
+        body = injectGoogleVerification(body);
+        body = injectFirebaseClient(body);
+      }
       return new Response(body, { status: upstream.status, headers });
     }
 
