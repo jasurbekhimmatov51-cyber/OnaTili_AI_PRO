@@ -147,27 +147,35 @@ function injectStyles() {
     .cloud-record{display:flex;gap:14px;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid rgba(130,145,185,.2)}.cloud-record:last-child{border-bottom:0}.cloud-record h3{font-size:15px;margin:0 0 4px}.cloud-record p{margin:0;color:#9faccc;font-size:13px}.cloud-score{font-size:18px;font-weight:800;color:#cdbfff;white-space:nowrap}
     .community-grid,.admin-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.community-list,.admin-list{display:grid;gap:10px}.community-question{padding:16px;border-radius:16px;background:#18233f;border:1px solid #2b3b60}.community-question h3{font-size:16px;margin:0 0 12px}.community-options{display:grid;gap:8px}.community-option{padding:10px 12px;text-align:left;border-radius:10px;border:1px solid #34476f;background:#111a31;color:#d9e2f5;cursor:pointer}.community-option:hover{border-color:#a891ff}.community-option.correct{border-color:#43d39e;background:rgba(46,179,126,.18)}.community-option.wrong{border-color:#ff8793;background:rgba(207,61,83,.16)}.community-feedback{margin:10px 0 0;color:#b9c8eb;font-size:13px}
     .admin-nav-badge{margin-left:auto;background:#e9bc52;color:#202232;border-radius:7px;padding:2px 6px;font-size:10px;font-weight:800}.admin-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}.admin-card{padding:18px;border-radius:16px;background:#18233f;border:1px solid #2b3b60}.admin-card b{display:block;font-size:27px;color:#fff}.admin-card span{font-size:13px;color:#aeb9d5}.admin-form{display:grid;gap:11px}.admin-form label{display:grid;gap:6px;color:#b9c6e2;font-size:13px}.admin-form textarea{min-height:88px;resize:vertical}.admin-form .option-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.admin-row{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid rgba(130,145,185,.2)}.admin-row:last-child{border-bottom:0}.admin-row p{margin:4px 0 0;color:#9faccc;font-size:13px}.admin-delete{border:1px solid rgba(255,137,147,.55);background:transparent;color:#ffb3bb;border-radius:9px;padding:7px 10px;cursor:pointer;height:max-content}.admin-empty{padding:18px;color:#aeb9d5;text-align:center;border:1px dashed #40517a;border-radius:14px}
-    .google-account-note{padding:12px;border-radius:12px;background:rgba(104,83,194,.17);color:#cfc9ff;font-size:13px;margin-top:13px}.auth-google-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#fff;color:#4285f4;font-weight:900;margin-right:8px}.google-account-actions{display:grid;gap:9px;margin-top:16px}
+    .google-account-note{padding:12px;border-radius:12px;background:rgba(104,83,194,.17);color:#cfc9ff;font-size:13px;margin-top:13px}.auth-google-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#fff;color:#4285f4;font-weight:900;margin-right:8px}.google-account-actions{display:grid;gap:9px;margin-top:16px}.admin-password-status{min-height:20px;margin:0;font-size:13px;font-weight:700}.admin-password-status.error{color:#ff98a4}.admin-password-status.success{color:#72e5b4}
     @media(max-width:760px){.cloud-kpis,.admin-grid{grid-template-columns:1fr}.community-grid,.admin-layout{grid-template-columns:1fr}.admin-form .option-grid{grid-template-columns:1fr}.cloud-record{align-items:flex-start;flex-direction:column}.firebase-banner{align-items:flex-start}.firebase-banner button{margin-left:0}}
   `;
   document.head.append(style);
 }
 
 async function unlockAdminPanel(password) {
-  if (!STATE.isAdmin || !STATE.user || !password) return false;
+  if (!STATE.isAdmin || !STATE.user || !password) return { ok: false, message: 'Parolni kiriting.' };
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
   try {
     const response = await fetch('/api/admin-unlock', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ password }),
+      signal: controller.signal
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data?.unlocked) return false;
-    STATE.adminUnlocked = true;
-    sessionStorage.setItem(ADMIN_UNLOCK_KEY, STATE.user.uid);
-    return true;
-  } catch {
-    return false;
+    if (response.ok && data?.unlocked) {
+      STATE.adminUnlocked = true;
+      sessionStorage.setItem(ADMIN_UNLOCK_KEY, STATE.user.uid);
+      return { ok: true, message: 'Parol to‘g‘ri. Panel ochilmoqda… ✓' };
+    }
+    if (response.status === 401) return { ok: false, message: 'Parol xato. Qayta urinib ko‘ring.' };
+    return { ok: false, message: 'Tekshiruvda xatolik bo‘ldi. Qayta urinib ko‘ring.' };
+  } catch (error) {
+    return { ok: false, message: error?.name === 'AbortError' ? 'Tekshiruv vaqti tugadi. Internetni tekshirib qayta urinib ko‘ring.' : 'Internet bilan ulanib bo‘lmadi. Qayta urinib ko‘ring.' };
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
@@ -179,7 +187,7 @@ function showAdminPasswordForm() {
   const modal = $('#authModal');
   if (!modal) return;
   modal.hidden = false;
-  modal.innerHTML = `<div class="modal-backdrop" id="firebaseCloseBackdrop"></div><div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="adminPasswordTitle"><button id="firebaseClose" class="modal-close" aria-label="Yopish">×</button><div class="brand modal-brand"><span class="brand-mark">O<span>✦</span></span><div><strong>OnaTili<span class="logo-ai">AI</span></strong><small>ADMIN HIMOYASI</small></div></div><h2 id="adminPasswordTitle">Admin panelni ochish</h2><p>Google akkauntingiz tasdiqlandi. Davom etish uchun admin parolini kiriting.</p><form class="google-account-actions" id="adminPasswordForm"><label class="google-account-note" for="adminPasswordInput">Admin paroli<input class="input" id="adminPasswordInput" name="password" type="password" inputmode="numeric" autocomplete="current-password" required></label><p id="adminPasswordError" class="community-feedback" role="alert"></p><button class="btn primary wide" type="submit">Panelni ochish</button></form></div>`;
+  modal.innerHTML = `<div class="modal-backdrop" id="firebaseCloseBackdrop"></div><div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="adminPasswordTitle"><button id="firebaseClose" class="modal-close" aria-label="Yopish">×</button><div class="brand modal-brand"><span class="brand-mark">O<span>✦</span></span><div><strong>OnaTili<span class="logo-ai">AI</span></strong><small>ADMIN HIMOYASI</small></div></div><h2 id="adminPasswordTitle">Admin panelni ochish</h2><p>Google akkauntingiz tasdiqlandi. Davom etish uchun admin parolini kiriting.</p><form class="google-account-actions" id="adminPasswordForm"><label class="google-account-note" for="adminPasswordInput">Admin paroli<input class="input" id="adminPasswordInput" name="password" type="password" inputmode="numeric" autocomplete="current-password" required></label><p id="adminPasswordError" class="admin-password-status" role="alert" aria-live="polite"></p><button class="btn primary wide" type="submit">Panelni ochish</button></form></div>`;
   $('#firebaseClose')?.addEventListener('click', closeModal);
   $('#firebaseCloseBackdrop')?.addEventListener('click', closeModal);
   $('#adminPasswordForm')?.addEventListener('submit', async (event) => {
@@ -190,17 +198,28 @@ function showAdminPasswordForm() {
     if (!input || !button) return;
     button.disabled = true;
     button.textContent = 'Tekshirilmoqda…';
-    const unlocked = await unlockAdminPanel(input.value);
-    if (!unlocked) {
-      if (error) error.textContent = 'Parol noto‘g‘ri. Qayta urinib ko‘ring.';
+    const result = await unlockAdminPanel(input.value);
+    if (!result.ok) {
+      if (error) {
+        error.textContent = result.message;
+        error.className = 'admin-password-status error';
+      }
       input.value = '';
       input.focus();
       button.disabled = false;
       button.textContent = 'Panelni ochish';
       return;
     }
-    closeModal();
-    openAdminPage();
+    if (error) {
+      error.textContent = result.message;
+      error.className = 'admin-password-status success';
+    }
+    button.textContent = 'Parol to‘g‘ri ✓';
+    window.setTimeout(() => {
+      closeModal();
+      openAdminPage();
+      notify('Admin panel ochildi. ✓');
+    }, 650);
   });
 }
 
