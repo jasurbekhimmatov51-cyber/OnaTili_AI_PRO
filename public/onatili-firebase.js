@@ -29,7 +29,6 @@ const STATE = {
   auth: null,
   db: null,
   user: null,
-  adminEmailHash: '',
   isAdmin: false,
   communityQuestions: [],
   contentReady: false
@@ -117,19 +116,16 @@ function isCurrentResultsPage() {
   return Boolean($('#page-results.active'));
 }
 
-async function sha256(value) {
-  if (!window.crypto?.subtle) return '';
-  const bytes = new TextEncoder().encode(String(value || '').trim().toLowerCase());
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
 async function updateAdminStatus() {
-  if (!STATE.user || !STATE.adminEmailHash) {
-    STATE.isAdmin = false;
-    return;
+  STATE.isAdmin = false;
+  if (!STATE.user || !STATE.db) return;
+  try {
+    // Firestore rules allow this aggregate only for the configured admin.
+    await getCountFromServer(collection(STATE.db, 'profiles'));
+    STATE.isAdmin = true;
+  } catch {
+    // Other signed-in users do not receive admin UI or privileges.
   }
-  STATE.isAdmin = (await sha256(STATE.user.email || '')) === STATE.adminEmailHash;
 }
 
 function injectStyles() {
@@ -654,7 +650,6 @@ async function begin() {
     return;
   }
   if (!settings?.configured || !settings?.firebaseConfig) return;
-  STATE.adminEmailHash = settings.adminEmailHash || '';
   try {
     const app = initializeApp(settings.firebaseConfig);
     STATE.auth = getAuth(app);
