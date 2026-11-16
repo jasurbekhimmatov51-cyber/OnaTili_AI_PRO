@@ -1,5 +1,6 @@
 const UPSTREAM_ORIGIN = 'https://onatili-ai-preview-jasurbek.stunningmarmalade1.chatgpt.site';
 const GOOGLE_SITE_VERIFICATION = '<meta name="google-site-verification" content="tAe0xjOHXQAKMkkyr35u-87czrq7-coUl0yhjV7_Z2U" />';
+const FIREBASE_CLIENT_SCRIPT = '/onatili-firebase.js?v=admin-password-2';
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -49,8 +50,8 @@ function injectGoogleVerification(html) {
 }
 
 function injectFirebaseClient(html) {
-  if (html.includes('/onatili-firebase.js')) return html;
-  return html.replace(/<\/body>/i, '<script type="module" src="/onatili-firebase.js"></script></body>');
+  if (html.includes(FIREBASE_CLIENT_SCRIPT)) return html;
+  return html.replace(/<\/body>/i, `<script type="module" src="${FIREBASE_CLIENT_SCRIPT}"></script></body>`);
 }
 
 function copiedHeaders(response, origin) {
