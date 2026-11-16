@@ -186,7 +186,7 @@ function showAdminPasswordForm() {
   }
   const modal = $('#authModal');
   if (!modal) return;
-  modal.hidden = false;
+  openModal();
   modal.innerHTML = `<div class="modal-backdrop" id="firebaseCloseBackdrop"></div><div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="adminPasswordTitle"><button id="firebaseClose" class="modal-close" aria-label="Yopish">×</button><div class="brand modal-brand"><span class="brand-mark">O<span>✦</span></span><div><strong>OnaTili<span class="logo-ai">AI</span></strong><small>ADMIN HIMOYASI</small></div></div><h2 id="adminPasswordTitle">Admin panelni ochish</h2><p>Google akkauntingiz tasdiqlandi. Davom etish uchun admin parolini kiriting.</p><form class="google-account-actions" id="adminPasswordForm"><label class="google-account-note" for="adminPasswordInput">Admin paroli<input class="input" id="adminPasswordInput" name="password" type="password" inputmode="numeric" autocomplete="current-password" required></label><p id="adminPasswordError" class="admin-password-status" role="alert" aria-live="polite"></p><button class="btn primary wide" type="submit">Panelni ochish</button></form></div>`;
   $('#firebaseClose')?.addEventListener('click', closeModal);
   $('#firebaseCloseBackdrop')?.addEventListener('click', closeModal);
@@ -219,7 +219,7 @@ function showAdminPasswordForm() {
       closeModal();
       openAdminPage();
       notify('Admin panel ochildi. ✓');
-    }, 650);
+    }, 450);
   });
 }
 
@@ -231,12 +231,19 @@ function appModalMarkup() {
 
 function closeModal() {
   const modal = $('#authModal');
-  if (modal) modal.hidden = true;
+  if (!modal) return;
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  // Upstream CSS can override the native hidden attribute, so force the panel closed.
+  modal.style.setProperty('display', 'none', 'important');
 }
 
 function openModal() {
   const modal = $('#authModal');
-  if (modal) modal.hidden = false;
+  if (!modal) return;
+  modal.style.removeProperty('display');
+  modal.hidden = false;
+  modal.removeAttribute('aria-hidden');
 }
 
 function refreshAccountUi() {
