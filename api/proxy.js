@@ -64,7 +64,11 @@ export default {
       headers: forwardedHeaders(request),
       redirect: 'manual'
     };
-    if (!['GET', 'HEAD'].includes(method)) init.body = request.body;
+    if (!['GET', 'HEAD'].includes(method)) {
+      init.body = request.body;
+      // Node.js fetch requires this when a streamed request body is forwarded.
+      init.duplex = 'half';
+    }
 
     let upstream;
     try {
