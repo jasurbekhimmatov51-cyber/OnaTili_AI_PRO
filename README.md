@@ -1,50 +1,28 @@
-# OnaTili AI PRO — milliy sertifikatga tayyorgarlik
+# OnaTili AI on Vercel
 
-**Ona tili va adabiyot** fanidan shaxsiy tayyorgarlik sayti. 31 ta original dars, 114 ta test savoli (shundan 30 tasi matn asosida), 10 ta moslashtirish, 16 ta ochiq tahlil topshirig‘i va 12 ta esse mavzusi mavjud.
+Live site: https://onatili-ai.vercel.app/
 
-## Windows'da ochish
+This project uses Node.js serverless handlers. The older Python placeholders in this repository are not the deployed application.
 
-1. `OnaTili_AI_PRO.zip` faylini papkaga **Extract All** orqali ajrating.
-2. Kompyuterda **Python 3.10 yoki yuqori** o‘rnatilgan bo‘lsin (Python.org). Python o‘rnatayotganda **Add Python to PATH** ni tanlang.
-3. Papkadagi `START.bat` faylini ikki marta bosing.
-4. Sayt odatda yangi brauzer oynasida yoki tabida ochiladi. Aks holda `http://127.0.0.1:5000` manzilini Chrome yoki Edge'da oching.
-5. Sayt ishlashi uchun qora server oynasini yopmang. To‘xtatish: `Ctrl+C`.
+- `api/proxy.js` forwards learning endpoints and HTML from the existing OnaTili AI Sites Worker.
+- `public/onatili-firebase.js` adds Google authentication, cloud result summaries, owner administration and ElevenLabs speech.
+- `lib/auth.js` validates Firebase ID tokens and signs short-lived admin sessions.
+- `api/admin-content.js` writes content using the authenticated owner's Firestore permissions.
+- `lib/speech.js` uses Eleven v3 with Uzbek language selection.
 
-**Mac/Linux**: terminalda `python3 launcher.py`, yoki `./start.sh`.
+## Required production settings
 
-**Qo‘shimcha kutubxona kerak emas.** HTML, CSS, JS frontend, Python `http.server` backend va `sqlite3` bazasi Python bilan birga keladi. Parollar `PBKDF2-HMAC-SHA256` orqali tuz bilan xeshlanadi. Sayt tashqi internetga ochilmaydi (`127.0.0.1`).
+Firebase web configuration: FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_PROJECT_ID, FIREBASE_STORAGE_BUCKET, FIREBASE_MESSAGING_SENDER_ID, FIREBASE_APP_ID.
 
-## Funksiyalar
+Server-only settings: ADMIN_EMAIL (verified site owner), ADMIN_PANEL_PASSWORD, ADMIN_SESSION_SECRET (random, at least 32 characters), ELEVENLABS_API_KEY. Never expose these through public frontend variables.
 
-- **Bosh sahifa** — darslar, tayyorgarlik foizi, kunlar hisoblagichi.
-- **Darslar** — 31 modul, misol, odatiy xato, mini mashq, darsni tugallangan deb belgilash.
-- **Mavzuli mock** — 5–40 savol oralig‘i (bank imkoniga qarab), kategoriya bo‘yicha, taymer va izohli tahlil.
-- **To‘liq mock** — 45 ta topshiriq, 180 daqiqa; 32 tanlovli (15 matn asosida), 3 moslashtirish, 9 ta ikki bandli tahlil, 1 esse. Natija sahifasi va javoblar tafsiloti.
-- **Esse laboratoriyasi** — 12 mezon ko‘rinishi va **faqat taxminiy** pedagogik algoritm. 100 so‘zdan kam esse uchun maxsus qoida ko‘rsatiladi. AI API mavjud bo‘lsa, alohida mazmuniy maslahat beradi.
-- **Ustoz** — API kalitsiz dars va mini test bo‘yicha lokal yordamchi; kalit bilan masofaviy AI chat. Brauzer qo‘llasa ovozni tanish va ovoz chiqarib o‘qish.
-- **Reja** — imtihon sanasini sozlash, kunlik checklist, haftalik ritm.
-- **Kabinet** — ro‘yxatdan o‘tish / kirish, SQLite tarix va natijalar. Kirishsiz vaqtinchalik mock va esse ishlaydi, uzoq muddatli progress uchun akkaunt kerak.
+Changing an environment variable requires a new deployment. Node 22.x is the deployed runtime; functions run in Frankfurt.
 
-## AI integratsiya (ixtiyoriy)
+## Checks
 
-1. `.env.example` nusxasini `.env` deb o‘zgartiring.
-2. `OPENAI_API_KEY=...` ni o‘zingizning kalitingiz bilan to‘ldiring.
-3. Serverni qayta ishga tushiring. Kalit faqat **backendda** qoladi, brauzerga yuborilmaydi.
-4. Bunday AI xizmatiga internet, alohida hisob va ba’zan to‘lov kerak bo‘lishi mumkin. AI ishonchliligini tekshiring.
+Run `node --test tests/*.test.js`. No third-party runtime dependencies are required.
 
-**Muhim chegaralar:**
-- Bu O‘zbekiston Bilim va malakalarni baholash agentligining rasmiy sayti emas. Savollar ishlab chiqilgan **o‘quv namunalari**, rasmiy testlarning nusxasi emas.
-- Rasmiy baholash Rasch modeli va ekspert tahliliga asoslanadi. Saytdagi foiz, esse bo‘yicha 24 lik raqam va boshqa natijalar rasmiy ball emas.
-- 31 dars boshlang‘ich va o‘rta darajaga mos. Hamma adabiyot asarlarini chuqur qamrab olgan to‘liq milliy dastur deb qabul qilinmasin.
-- Ovoz kiritish `SpeechRecognition` brauzerga va tilni qo‘llab-quvvatlashga bog‘liq. O‘zbekcha ovoz sifati tizimga qarab farq qiladi.
-- Mahalliy server kompyuteringizda ishlaydi. Boshqalarga internet orqali foydalanish imkonini berish uchun hosting, HTTPS, qo‘shimcha xavfsizlik va monitoring kerak.
+The Sites source is maintained separately under project appgprj_6af5e1b4f9dc8191beb3adaf18659c0d. Its Worker tests cover grading, history, input limits and local tutoring. Both sources must be kept in sync for changes to the learning frontend.
 
-## Ma’lumotlar
+See [AUDIT.md](AUDIT.md) for fixes, verification scope and remaining service dependencies.
 
-`study.db` fayli birinchi ishga tushganda yaratiladi. Akkauntlar, darslar progressi, esse va sinov natijalari shu bazada saqlanadi. Zaxiralash uchun serverni to‘xtatib `study.db` faylini nusxalang. Maxfiy parolingizni hech kimga bermang.
-
-## Rasmiy manba
-
-Ona tili va adabiyot fanidan yozma ish baholash mezoni: https://uzbmb.uz/post/view/ona-tili-va-adabiyot-fanidan-yozma-ishni-baholash-mezoni
-
-O‘zbekiston Bilim va malakalarni baholash agentligi: https://uzbmb.uz/

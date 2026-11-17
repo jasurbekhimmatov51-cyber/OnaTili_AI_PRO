@@ -20,3 +20,4 @@ export default function handler(request, response) {
     firebaseConfig: configured ? firebaseConfig : null
   });
 }
+

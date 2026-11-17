@@ -19,6 +19,7 @@ import {
   getDocs,
   getFirestore,
   limit,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -37,6 +38,20 @@ const STATE = {
 
 const PENDING_KEY = 'onatili_firebase_pending_records_v1';
 const ADMIN_UNLOCK_KEY = 'onatili_admin_unlock_uid_v1';
+let authRevision = 0, pendingFlush = false, modalReturnFocus = null;
+async function authHeaders() {
+  if (!STATE.user) { openModal(); throw new Error('Ovoz va shaxsiy xizmatlar uchun Google bilan kiring.'); }
+  return { authorization: 'Bearer ' + await STATE.user.getIdToken() };
+}
+async function secureFetch(url, options = {}) {
+  return fetch(url, { ...options, headers: { ...options.headers, ...await authHeaders() }, signal: options.signal || AbortSignal.timeout(45000) });
+}
+async function adminMutation(action, data) {
+  const response = await secureFetch('/api/admin-content', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...data }) });
+  const value = await response.json();
+  if (!response.ok) { if(response.status===403){STATE.adminUnlocked=false;showAdminPasswordForm();} throw new Error(value.error || 'Saqlash bajarilmadi.'); }
+  return value;
+}
 const $ = (selector, scope = document) => scope.querySelector(selector);
 const $$ = (selector, scope = document) => [...scope.querySelectorAll(selector)];
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
@@ -80,32 +95,19 @@ function dateText(value) {
 function pendingRecords() {
   try {
     const records = JSON.parse(localStorage.getItem(PENDING_KEY) || '[]');
-    return Array.isArray(records) ? records : [];
-  } catch {
-    return [];
-  }
+    return Array.isArray(records) ? records.filter(r => ['attempts','essays'].includes(r.bucket) && r.payload).map((r,index) => ({ ...r, id: r.id || 'legacy_' + (r.queuedAt || 0) + '_' + index, owner: r.owner || null })) : [];
+  } catch { return []; }
 }
-
 function putPending(records) {
-  try {
-    localStorage.setItem(PENDING_KEY, JSON.stringify(records.slice(-24)));
-  } catch {
-    // Browser storage can be disabled. The live test result still remains visible.
-  }
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(records.slice(-100))); } catch {}
 }
-
-function queueRecord(bucket, payload) {
+function queueRecord(record) {
   const records = pendingRecords();
-  records.push({ bucket, payload, queuedAt: Date.now() });
+  if (!records.some(r => r.id === record.id && r.bucket === record.bucket && r.owner === record.owner)) records.push(record);
   putPending(records);
 }
-
-function clearPending() {
-  try {
-    localStorage.removeItem(PENDING_KEY);
-  } catch {
-    // No action needed when storage is disabled.
-  }
+function forgetRecord(record) {
+  putPending(pendingRecords().filter(r => !(r.id === record.id && r.bucket === record.bucket && r.owner === record.owner)));
 }
 
 function getRequestUrl(input) {
@@ -119,17 +121,16 @@ function isCurrentResultsPage() {
 }
 
 async function updateAdminStatus() {
-  STATE.isAdmin = false;
-  STATE.adminUnlocked = false;
-  if (!STATE.user || !STATE.db) return;
+  STATE.isAdmin = false; STATE.adminUnlocked = false;
+  const uid = STATE.user?.uid;
+  if (!uid) return;
   try {
-    // Firestore rules allow this aggregate only for the configured admin.
-    await getCountFromServer(collection(STATE.db, 'profiles'));
-    STATE.isAdmin = true;
-    STATE.adminUnlocked = sessionStorage.getItem(ADMIN_UNLOCK_KEY) === STATE.user.uid;
-  } catch {
-    // Other signed-in users do not receive admin UI or privileges.
-  }
+    const response = await secureFetch('/api/admin-unlock');
+    const data = await response.json();
+    if (STATE.user?.uid !== uid) return;
+    STATE.isAdmin = response.ok && data.isAdmin === true;
+    STATE.adminUnlocked = STATE.isAdmin && data.unlocked === true;
+  } catch {}
 }
 
 function injectStyles() {
@@ -141,6 +142,7 @@ function injectStyles() {
     #sidebar.sidebar{height:100vh!important;height:100dvh!important;max-height:100vh!important;max-height:100dvh!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;box-sizing:border-box;padding-bottom:calc(22px + env(safe-area-inset-bottom))!important;scroll-padding-bottom:28px;scrollbar-width:thin;scrollbar-color:rgba(177,155,255,.55) transparent}
     #sidebar::-webkit-scrollbar{width:6px}#sidebar::-webkit-scrollbar-thumb{background:rgba(177,155,255,.55);border-radius:999px}
     #sidebar .nav,#sidebar .sidebar-bottom{flex:none!important}
+    [hidden]{display:none!important}.voice-actions{display:flex;gap:6px;flex-wrap:wrap}.auth-modal{max-height:calc(100dvh - 32px);overflow-y:auto}.modal-close{min-width:44px;min-height:44px}.modal-backdrop{touch-action:none}
     .firebase-banner{display:flex;align-items:center;gap:12px;margin:0 0 18px;padding:13px 16px;border:1px solid rgba(156,133,255,.42);background:linear-gradient(135deg,rgba(86,67,157,.28),rgba(23,33,65,.75));border-radius:16px;color:#e9e4ff}.firebase-banner b{color:#bbaaff}.firebase-banner button{margin-left:auto;border:0;background:transparent;color:#ded7ff;font-size:20px;cursor:pointer}
     .cloud-results-head,.community-hero,.admin-hero{padding:24px;border-radius:22px;background:linear-gradient(135deg,#30275d,#172348);border:1px solid rgba(180,160,255,.32);margin-bottom:18px}.cloud-results-head h2,.community-hero h2,.admin-hero h2{margin:6px 0;color:#fff}.cloud-results-head p,.community-hero p,.admin-hero p{color:#bec6df;margin:6px 0 0}.cloud-results-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
     .cloud-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.cloud-kpi{padding:18px;border-radius:16px;background:#17203c;border:1px solid #2a3656}.cloud-kpi b{display:block;color:#fff;font-size:27px}.cloud-kpi span{color:#aeb9d5;font-size:13px}
@@ -156,22 +158,24 @@ function injectStyles() {
 
 async function unlockAdminPanel(password) {
   if (!STATE.isAdmin || !STATE.user || !password) return { ok: false, message: 'Parolni kiriting.' };
+  const uid = STATE.user.uid;
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 8000);
+  const timeout = window.setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch('/api/admin-unlock', {
+    const response = await secureFetch('/api/admin-unlock', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ password }),
       signal: controller.signal
     });
     const data = await response.json().catch(() => ({}));
+    if (STATE.user?.uid !== uid) return { ok: false, message: 'Hisob almashdi. Qayta kiring.' };
     if (response.ok && data?.unlocked) {
       STATE.adminUnlocked = true;
-      sessionStorage.setItem(ADMIN_UNLOCK_KEY, STATE.user.uid);
+
       return { ok: true, message: 'Parol to‘g‘ri. Panel ochilmoqda… ✓' };
     }
-    if (response.status === 401) return { ok: false, message: 'Parol xato. Qayta urinib ko‘ring.' };
+    if (data.error) return { ok: false, message: data.error };
     return { ok: false, message: 'Tekshiruvda xatolik bo‘ldi. Qayta urinib ko‘ring.' };
   } catch (error) {
     return { ok: false, message: error?.name === 'AbortError' ? 'Tekshiruv vaqti tugadi. Internetni tekshirib qayta urinib ko‘ring.' : 'Internet bilan ulanib bo‘lmadi. Qayta urinib ko‘ring.' };
@@ -188,7 +192,7 @@ function showAdminPasswordForm() {
   const modal = $('#authModal');
   if (!modal) return;
   openModal();
-  modal.innerHTML = `<div class="modal-backdrop" id="firebaseCloseBackdrop"></div><div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="adminPasswordTitle"><button id="firebaseClose" class="modal-close" aria-label="Yopish">×</button><div class="brand modal-brand"><span class="brand-mark">O<span>✦</span></span><div><strong>OnaTili<span class="logo-ai">AI</span></strong><small>ADMIN HIMOYASI</small></div></div><h2 id="adminPasswordTitle">Admin panelni ochish</h2><p>Google akkauntingiz tasdiqlandi. Davom etish uchun admin parolini kiriting.</p><form class="google-account-actions" id="adminPasswordForm"><label class="google-account-note" for="adminPasswordInput">Admin paroli<input class="input" id="adminPasswordInput" name="password" type="password" inputmode="numeric" autocomplete="current-password" required></label><p id="adminPasswordError" class="admin-password-status" role="alert" aria-live="polite"></p><button class="btn primary wide" type="submit">Panelni ochish</button></form></div>`;
+  modal.innerHTML = `<div class="modal-backdrop" id="firebaseCloseBackdrop"></div><div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="adminPasswordTitle"><button id="firebaseClose" class="modal-close" aria-label="Yopish">×</button><div class="brand modal-brand"><span class="brand-mark">O<span>✦</span></span><div><strong>OnaTili<span class="logo-ai">AI</span></strong><small>ADMIN HIMOYASI</small></div></div><h2 id="adminPasswordTitle">Admin panelni ochish</h2><p>Google akkauntingiz tasdiqlandi. Davom etish uchun admin parolini kiriting.</p><form class="google-account-actions" id="adminPasswordForm"><label class="google-account-note" for="adminPasswordInput">Admin paroli<input class="input" id="adminPasswordInput" name="password" type="password" autocomplete="current-password" maxlength="128" required></label><p id="adminPasswordError" class="admin-password-status" role="alert" aria-live="polite"></p><button class="btn primary wide" type="submit">Panelni ochish</button></form></div>`;
   $('#firebaseClose')?.addEventListener('click', closeModal);
   $('#firebaseCloseBackdrop')?.addEventListener('click', closeModal);
   $('#adminPasswordForm')?.addEventListener('submit', async (event) => {
@@ -206,7 +210,7 @@ function showAdminPasswordForm() {
         error.className = 'admin-password-status error';
       }
       input.value = '';
-      input.focus();
+      if (!modal.hidden) input.focus();
       button.disabled = false;
       button.textContent = 'Panelni ochish';
       return;
@@ -216,8 +220,9 @@ function showAdminPasswordForm() {
       error.className = 'admin-password-status success';
     }
     button.textContent = 'Parol to‘g‘ri ✓';
+    const wasOpen = !modal.hidden;
     closeModal();
-    openAdminPage();
+    if (wasOpen) openAdminPage();
     notify('Parol to‘g‘ri. Admin panel ochildi. ✓');
   });
 }
@@ -235,14 +240,17 @@ function closeModal() {
   modal.setAttribute('aria-hidden', 'true');
   // Upstream CSS can override the native hidden attribute, so force the panel closed.
   modal.style.setProperty('display', 'none', 'important');
+  if (modalReturnFocus?.isConnected && !modal.contains(modalReturnFocus)) modalReturnFocus.focus();
 }
 
 function openModal() {
   const modal = $('#authModal');
   if (!modal) return;
+  modalReturnFocus = document.activeElement;
   modal.style.removeProperty('display');
   modal.hidden = false;
   modal.removeAttribute('aria-hidden');
+  requestAnimationFrame(() => modal.querySelector('input,button,a')?.focus());
 }
 
 function refreshAccountUi() {
@@ -251,6 +259,7 @@ function refreshAccountUi() {
   const label = $('#userLabel');
   const avatar = $('#avatar');
   if (!modal || !button || !label || !avatar) return;
+  if ($('#adminPasswordForm') && !modal.hidden) return;
   modal.innerHTML = appModalMarkup();
   const displayName = STATE.user?.displayName || STATE.user?.email?.split('@')[0] || '';
   label.textContent = displayName || 'Google bilan kirish';
@@ -306,9 +315,11 @@ async function startGoogleLogin() {
 
 async function logout() {
   try {
+    await fetch('/api/admin-unlock', { method: 'DELETE', signal: AbortSignal.timeout(8000) }).catch(() => {});
+    stopTutorVoice();
     await signOut(STATE.auth);
     STATE.adminUnlocked = false;
-    sessionStorage.removeItem(ADMIN_UNLOCK_KEY);
+    try { sessionStorage.removeItem(ADMIN_UNLOCK_KEY); } catch {}
     closeModal();
     notify('Google hisobidan chiqdingiz.');
     if (isCurrentResultsPage()) renderCloudResults();
@@ -338,6 +349,8 @@ function normalizeMockResult(result) {
     percentage: maxPoints ? Math.round((points / maxPoints) * 100) : asNumber(summary.percentage),
     objectiveCorrect: asNumber(summary.objective_correct),
     objectiveTotal: asNumber(summary.objective_total),
+    objectiveWrong: asNumber(summary.objective_wrong),
+    objectiveSkipped: asNumber(summary.objective_skipped),
     answered: asNumber(summary.answered),
     totalQuestions: asNumber(summary.total_questions),
     categoryStats: categories,
@@ -355,37 +368,37 @@ function normalizeEssayResult(result) {
   };
 }
 
-async function writeRecord(bucket, payload, quietly = false) {
-  if (!STATE.user || !STATE.db) {
-    queueRecord(bucket, payload);
-    if (!quietly) notify('Natija bu qurilmada saqlandi. Google bilan kirgach, profilingizga o‘tadi.');
-    return false;
-  }
+async function saveQueuedRecord(record) {
+  const uid = STATE.user?.uid;
+  if (!uid || !STATE.db || (record.owner && record.owner !== uid)) return false;
   try {
-    await addDoc(collection(STATE.db, 'users', STATE.user.uid, bucket), {
-      ...payload,
-      createdAt: serverTimestamp()
-    });
-    if (!quietly) notify('Natija Google hisobingizga saqlandi. ✓');
+    const reference = doc(STATE.db, 'users', uid, record.bucket, record.id);
+    const existing = await getDoc(reference);
+    if (STATE.user?.uid !== uid) return false;
+    if (!existing.exists()) await setDoc(reference, { ...record.payload, createdAt: serverTimestamp() });
+    forgetRecord(record);
     return true;
-  } catch {
-    queueRecord(bucket, payload);
-    if (!quietly) notify('Natija vaqtincha qurilmada saqlandi. Google hisobiga keyin yuboriladi.', true);
-    return false;
-  }
+  } catch { return false; }
 }
-
-async function flushPendingRecords() {
-  if (!STATE.user || !STATE.db) return;
-  const records = pendingRecords();
-  if (!records.length) return;
-  const failed = [];
-  for (const record of records) {
-    const saved = await writeRecord(record.bucket, record.payload, true);
-    if (!saved) failed.push(record);
+async function writeRecord(bucket, payload, owner, id) {
+  const record = { id: id || crypto.randomUUID(), bucket, payload, owner: owner || null, queuedAt: Date.now() };
+  queueRecord(record);
+  if (owner && STATE.user?.uid === owner && await saveQueuedRecord(record)) {
+    notify('Natija Google hisobingizga saqlandi. ✓'); return true;
   }
-  if (failed.length) putPending(failed);
-  else clearPending();
+  notify(owner ? 'Natija qurilmada saqlandi. Shu hisob bilan qayta kirganda yuboriladi.' : 'Natija bu qurilmada saqlandi. Uni “Natijalarim” bo‘limida ko‘rasiz.');
+  return false;
+}
+async function flushPendingRecords(includeGuest = false) {
+  const uid = STATE.user?.uid;
+  if (!uid || !STATE.db || pendingFlush) return;
+  pendingFlush = true;
+  try {
+    for (const record of pendingRecords()) {
+      if (STATE.user?.uid !== uid) break;
+      if (record.owner === uid || (includeGuest && !record.owner)) await saveQueuedRecord(record);
+    }
+  } finally { pendingFlush = false; }
 }
 
 async function touchProfile() {
@@ -408,17 +421,18 @@ function patchNetworkCapture() {
   window.__onatiliFirebaseFetchPatched = true;
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (...argumentsList) => {
+    const owner = STATE.user?.uid || null;
     const response = await nativeFetch(...argumentsList);
     const url = getRequestUrl(argumentsList[0]);
     if (response.ok && /\/api\/mocks\/[^/]+\/submit(?:\?|$)/.test(url)) {
       void response.clone().json().then((data) => {
-        if (data?.result) return writeRecord('attempts', normalizeMockResult(data.result));
+        if (data?.result) return writeRecord('attempts', normalizeMockResult(data.result), owner, 'mock_' + url.match(/\/mocks\/([^/]+)\/submit/)?.[1]);
         return null;
       }).catch(() => {});
     }
     if (response.ok && /\/api\/essays\/analyze(?:\?|$)/.test(url)) {
       void response.clone().json().then((data) => {
-        if (data && typeof data === 'object') return writeRecord('essays', normalizeEssayResult(data));
+        if (data && typeof data === 'object') return writeRecord('essays', normalizeEssayResult(data), owner, data.id ? 'essay_' + data.id : undefined);
         return null;
       }).catch(() => {});
     }
@@ -434,8 +448,13 @@ const TUTOR_TTS = {
   requestId: 0,
   armed: false,
   armedUntil: 0,
-  observer: null
+  observer: null,
+  resolvePlayback: null,
+  activeButton: null,
+  cache: new Map()
 };
+let selectedVoice = 'george';
+try { selectedVoice = localStorage.getItem('onatili_voice_v1') || 'george'; } catch {}
 
 function setTutorVoiceStatus(message) {
   const status = $('#voiceSupport');
@@ -464,7 +483,8 @@ function splitTutorVoiceText(value, maximum = 820) {
       remaining.lastIndexOf('; ', maximum),
       remaining.lastIndexOf(', ', maximum)
     );
-    if (cut < Math.floor(maximum * 0.45)) cut = maximum;
+    if (cut < Math.floor(maximum * 0.45)) cut = remaining.lastIndexOf(' ', maximum);
+    if (cut < 1) cut = maximum;
     else cut += 1;
     chunks.push(remaining.slice(0, cut).trim());
     remaining = remaining.slice(cut).trim();
@@ -498,20 +518,23 @@ function stopTutorVoice() {
     }
   }
   TUTOR_TTS.source = null;
+  TUTOR_TTS.resolvePlayback?.();
+  TUTOR_TTS.resolvePlayback = null;
 }
 
 async function requestTutorAudio(text, signal) {
-  const response = await fetch('/api/elevenlabs-tts', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'audio/mpeg' },
-    body: JSON.stringify({ text }),
-    signal
+  const key = selectedVoice + ':' + text;
+  if (TUTOR_TTS.cache.has(key)) return TUTOR_TTS.cache.get(key).slice(0);
+  const response = await secureFetch('/api/elevenlabs-tts', {
+    method: 'POST', headers: { 'content-type': 'application/json', accept: 'audio/mpeg' },
+    body: JSON.stringify({ text, voice: selectedVoice }),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(45000)])
   });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data?.error || 'Ovoz tayyorlab bo‘lmadi.');
-  }
-  return response.arrayBuffer();
+  if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'Ovoz tayyorlab bo‘lmadi.'); }
+  const buffer = await response.arrayBuffer();
+  if (TUTOR_TTS.cache.size >= 12) TUTOR_TTS.cache.delete(TUTOR_TTS.cache.keys().next().value);
+  TUTOR_TTS.cache.set(key, buffer);
+  return buffer.slice(0);
 }
 
 async function playTutorAudio(buffer, requestId) {
@@ -520,11 +543,14 @@ async function playTutorAudio(buffer, requestId) {
   const decoded = await context.decodeAudioData(buffer.slice(0));
   if (requestId !== TUTOR_TTS.requestId) return;
   await new Promise((resolve) => {
+    TUTOR_TTS.resolvePlayback = resolve;
     const source = context.createBufferSource();
     source.buffer = decoded;
     source.connect(context.destination);
     source.onended = () => {
       if (TUTOR_TTS.source === source) TUTOR_TTS.source = null;
+      TUTOR_TTS.resolvePlayback = null;
+      source.disconnect();
       resolve();
     };
     TUTOR_TTS.source = source;
@@ -539,8 +565,9 @@ async function speakTutorWithElevenLabs(value, button = null) {
   const requestId = TUTOR_TTS.requestId;
   const chunks = splitTutorVoiceText(text);
   if (button) {
-    button.disabled = true;
-    button.textContent = 'Ovoz tayyorlanmoqda…';
+    TUTOR_TTS.activeButton = button;
+    button.textContent = '■ To‘xtatish';
+    button.setAttribute('aria-label','Ovozni to‘xtatish');
   }
   try {
     await unlockTutorVoice();
@@ -548,9 +575,10 @@ async function speakTutorWithElevenLabs(value, button = null) {
       if (requestId !== TUTOR_TTS.requestId) return;
       const controller = new AbortController();
       TUTOR_TTS.controller = controller;
-      setTutorVoiceStatus('🔊 ElevenLabs o‘qiyapti… (' + (index + 1) + '/' + chunks.length + ')');
+      setTutorVoiceStatus('Ovoz tayyorlanmoqda… (' + (index + 1) + '/' + chunks.length + ')');
       const audio = await requestTutorAudio(chunks[index], controller.signal);
       if (requestId !== TUTOR_TTS.requestId) return;
+      setTutorVoiceStatus('🔊 Ovoz eshittirilmoqda…');
       await playTutorAudio(audio, requestId);
     }
     if (requestId === TUTOR_TTS.requestId) {
@@ -564,7 +592,9 @@ async function speakTutorWithElevenLabs(value, button = null) {
   } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = '🔊 Qayta eshitish';
+      button.textContent = '🔊 Eshitish';
+      button.setAttribute('aria-label','Javobni eshitish');
+      if (TUTOR_TTS.activeButton === button) TUTOR_TTS.activeButton = null;
     }
   }
 }
@@ -588,6 +618,7 @@ function attachTutorVoiceButton(bubble) {
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (TUTOR_TTS.activeButton === button) { stopTutorVoice(); setTutorVoiceStatus('Ovoz to‘xtatildi'); return; }
     void unlockTutorVoice().catch(() => {});
     void speakTutorWithElevenLabs(tutorBubbleText(bubble), button);
   });
@@ -602,17 +633,7 @@ function armTutorVoice() {
 }
 
 function muteBrowserTutorSpeech() {
-  if (!window.speechSynthesis || window.__onatiliElevenLabsSpeechPatched) return;
-  try {
-    const nativeSpeak = window.speechSynthesis.speak.bind(window.speechSynthesis);
-    window.speechSynthesis.speak = (...argumentsList) => {
-      if ($('#page-tutor') && $('#readAloud')?.checked) return undefined;
-      return nativeSpeak(...argumentsList);
-    };
-    window.__onatiliElevenLabsSpeechPatched = true;
-  } catch {
-    // If the browser protects this method, the ElevenLabs button remains available.
-  }
+  window.speechSynthesis?.cancel();
 }
 
 function setupElevenLabsVoice() {
@@ -632,6 +653,7 @@ function setupElevenLabsVoice() {
         const prepared = attachTutorVoiceButton(node);
         if (!prepared || !TUTOR_TTS.armed || Date.now() > TUTOR_TTS.armedUntil) continue;
         if (!$('#readAloud')?.checked) continue;
+        if (!STATE.user) { setTutorVoiceStatus('Ovozni eshitish uchun Google bilan kiring.'); continue; }
         TUTOR_TTS.armed = false;
         void speakTutorWithElevenLabs(prepared.text, prepared.button);
       }
@@ -664,13 +686,15 @@ async function previewTutorVoice(slug, button) {
   stopTutorVoice();
   const requestId = TUTOR_TTS.requestId;
   const originalText = button.textContent;
+  const controller = new AbortController();
+  TUTOR_TTS.controller = controller;
   button.disabled = true;
   button.textContent = 'Tayyorlanmoqda…';
   try {
     await unlockTutorVoice();
     setTutorVoiceStatus('🔊 ' + (button.dataset.voiceName || 'Ovoz') + ' namunasi eshittirilmoqda…');
-    const response = await fetch('/api/elevenlabs-voice-preview?voice=' + encodeURIComponent(slug), {
-      cache: 'force-cache',
+    const response = await secureFetch('/api/elevenlabs-voice-preview?voice=' + encodeURIComponent(slug), {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
       headers: { accept: 'audio/mpeg' }
     });
     if (!response.ok) {
@@ -718,7 +742,17 @@ function renderTutorVoiceOptions(voices) {
       void unlockTutorVoice().catch(() => {});
       void previewTutorVoice(voice.slug, button);
     });
-    row.append(info, button);
+    const choose = document.createElement('button');
+    choose.type = 'button'; choose.className = 'voice-preview-button';
+    choose.textContent = selectedVoice === voice.slug ? '✓ Tanlangan' : 'Tanlash';
+    choose.addEventListener('click', () => {
+      stopTutorVoice(); selectedVoice = voice.slug;
+      try { localStorage.setItem('onatili_voice_v1', selectedVoice); } catch {}
+      renderTutorVoiceOptions(TUTOR_VOICE_PREVIEWS);
+      notify(voice.name + ' ovozi tanlandi.');
+    });
+    const actions = document.createElement('div'); actions.className = 'voice-actions'; actions.append(button, choose);
+    row.append(info, actions);
     list.append(row);
   }
 }
@@ -745,7 +779,7 @@ function ensureTutorVoicePicker() {
   const panel = document.createElement('section');
   panel.id = 'elevenLabsVoicePicker';
   panel.className = 'panel elevenlabs-picker';
-  panel.innerHTML = '<span class="eyebrow">ELEVENLABS OVOZLARI</span><h3>Ovozni tinglab tanlang</h3><p>Har biri bir xil o‘zbekcha namunani aytadi. Faqat hisobingizda ishlaydigan ovozlar chiqariladi. Yoqgan ovoz nomini menga yozing — uni AI Ustozning doimiy ovozi qilaman.</p><div class="voice-preview-list"><p>Ochiq ovozlar tekshirilmoqda…</p></div>';
+  panel.innerHTML = '<span class="eyebrow">ELEVENLABS OVOZLARI</span><h3>Ovozni tinglab tanlang</h3><p>Google bilan kiring, ovozlarni tinglang va yoqqanini tanlang. Tanlov shu brauzerda saqlanadi.</p><div class="voice-preview-list"><p>Ochiq ovozlar tekshirilmoqda…</p></div>';
   side.append(panel);
   void loadTutorVoiceOptions();
 }
@@ -770,16 +804,19 @@ async function renderCloudResults() {
   const host = $('#resultsContent');
   if (!host) return;
   if (!STATE.user || !STATE.db) {
-    host.innerHTML = `<div class="empty-state"><div class="empty-icon">G</div><h2>Natijalaringizni Google hisobingizga saqlang</h2><p>Google bilan kirsangiz, test va esse natijalari boshqa qurilmada ham yo‘qolmaydi.</p><button class="btn primary" id="cloudResultSignIn">Google bilan kirish</button></div>`;
-    $('#cloudResultSignIn')?.addEventListener('click', openModal);
+    if (typeof window.renderResults === 'function') await window.renderResults();
+    host.insertAdjacentHTML('afterbegin','<div class="google-account-note">Bu qurilmadagi natijalar. Google bilan kirib, natijalarni hisobingizga ham saqlashingiz mumkin.</div>');
     return;
   }
+  const resultsUid = STATE.user.uid;
+
   host.innerHTML = '<div class="panel"><p>Natijalaringiz yuklanmoqda…</p></div>';
   try {
     const [attemptsSnapshot, essaysSnapshot] = await Promise.all([
-      getDocs(query(collection(STATE.db, 'users', STATE.user.uid, 'attempts'), limit(50))),
-      getDocs(query(collection(STATE.db, 'users', STATE.user.uid, 'essays'), limit(50)))
+      getDocs(query(collection(STATE.db, 'users', resultsUid, 'attempts'), orderBy('createdAt','desc'), limit(50))),
+      getDocs(query(collection(STATE.db, 'users', resultsUid, 'essays'), orderBy('createdAt','desc'), limit(50)))
     ]);
+    if (STATE.user?.uid !== resultsUid) return;
     const attempts = attemptsSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
       .sort((left, right) => (right.createdAt?.seconds || 0) - (left.createdAt?.seconds || 0));
     const essays = essaysSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
@@ -790,6 +827,13 @@ async function renderCloudResults() {
     const recent = attempts.slice(0, 8).map((item) => `<div class="cloud-record"><div><h3>${escapeHtml(item.type === 'mock' ? 'Mock test' : 'Mashq')}</h3><p>${dateText(item.createdAt)} · ${item.objectiveCorrect || 0}/${item.objectiveTotal || item.totalQuestions || 0} ta obyektiv javob to‘g‘ri</p></div><strong class="cloud-score">${item.points || 0}/${item.maxPoints || 0}</strong></div>`).join('') || '<p>Hozircha Google hisobingizda test natijasi yo‘q.</p>';
     const recentEssays = essays.slice(0, 6).map((item) => `<div class="cloud-record"><div><h3>Esse tahlili</h3><p>${dateText(item.createdAt)} · ${item.wordCount || 0} ta so‘z</p></div><strong class="cloud-score">${item.score || 0}/${item.maxScore || 24}</strong></div>`).join('') || '<p>Hozircha esse tahlili yo‘q.</p>';
     host.innerHTML = `<div class="cloud-results-head"><span class="eyebrow purple">GOOGLE HISOBINGIZDA</span><h2>Shaxsiy natijalar</h2><p>Bu ma’lumotlar faqat sizning Google hisobingizga bog‘langan.</p><div class="cloud-results-actions"><button class="btn secondary" id="cloudRefresh">Yangilash</button>${STATE.isAdmin ? '<button class="btn ghost" id="cloudGoAdmin">Admin panel</button>' : ''}</div></div><div class="cloud-kpis"><div class="cloud-kpi"><b>${attempts.length}</b><span>Ishlangan mocklar</span></div><div class="cloud-kpi"><b>${average}%</b><span>O‘rtacha natija</span></div><div class="cloud-kpi"><b>${essays.length}</b><span>Esse tahlillari</span></div></div><div class="dashboard-row"><div class="panel"><span class="eyebrow">TEST TARIXI</span><h2>So‘nggi natijalar</h2>${recent}</div><div class="panel"><span class="eyebrow">ESSE TARIXI</span><h2>Yozma ishlar</h2>${recentEssays}</div></div>`;
+    const guests = pendingRecords().filter(r => !r.owner).length;
+    if (guests) {
+      const importButton = document.createElement('button'); importButton.className = 'btn secondary';
+      importButton.textContent = guests + ' ta qurilma natijasini shu hisobga saqlash';
+      importButton.onclick = async () => { importButton.disabled = true; await flushPendingRecords(true); await renderCloudResults(); };
+      $('.cloud-results-actions',host)?.append(importButton);
+    }
     $('#cloudRefresh')?.addEventListener('click', () => void renderCloudResults());
     $('#cloudGoAdmin')?.addEventListener('click', openAdminPage);
   } catch {
@@ -814,7 +858,7 @@ function ensureCommunityPage() {
 
 async function readPublishedContent() {
   const empty = { questions: [], topics: [], announcement: null };
-  if (!STATE.db) return empty;
+  if (!STATE.db) return { ...empty, error: true };
   try {
     const [questionsSnapshot, topicsSnapshot, announcementSnapshot] = await Promise.all([
       getDocs(query(collection(STATE.db, 'contentQuestions'), where('published', '==', true), limit(24))),
@@ -826,7 +870,7 @@ async function readPublishedContent() {
     const announcement = announcementSnapshot.exists() ? announcementSnapshot.data() : null;
     return { questions, topics, announcement };
   } catch {
-    return empty;
+    return { ...empty, error: true };
   }
 }
 
@@ -834,7 +878,12 @@ async function renderCommunity() {
   const host = $('#communityContent');
   if (!host) return;
   host.innerHTML = '<div class="panel"><p>Yangi savollar yuklanmoqda…</p></div>';
-  const { questions, topics, announcement } = await readPublishedContent();
+  const { questions, topics, announcement, error } = await readPublishedContent();
+  if (error) {
+    host.innerHTML='<div class="panel"><p>Yangi materiallar yuklanmadi. Internetni tekshirib qayta urinib ko‘ring.</p><button class="btn secondary" id="communityRetry">Qayta urinish</button></div>';
+    $('#communityRetry')?.addEventListener('click', () => void renderCommunity());
+    return;
+  }
   STATE.communityQuestions = questions;
   const banner = announcement?.active && announcement?.message
     ? `<div class="firebase-banner" id="communityAnnouncement"><span>✦</span><span><b>E’lon:</b> ${escapeHtml(announcement.message)}</span></div>`
@@ -846,7 +895,20 @@ async function renderCommunity() {
     ? topics.map((item) => `<div class="admin-row"><div><strong>${escapeHtml(item.title || 'Esse mavzusi')}</strong><p>${escapeHtml(item.prompt || '')}</p></div></div>`).join('')
     : '<p>Hozircha yangi esse mavzusi yo‘q.</p>';
   host.innerHTML = `${banner}<div class="community-hero"><span class="eyebrow purple">DOIM YANGILANADI</span><h2>Yangi ehtimoliy savollar</h2><p>Bu bo‘lim admin tomonidan qo‘shilgan mashq savollari va esse mavzularini ko‘rsatadi.</p></div><div class="community-grid"><div class="panel"><span class="eyebrow">MINI MASHQ</span><h2>Yangi savollar</h2><div class="community-list">${questionsMarkup}</div></div><div class="panel"><span class="eyebrow">ESSE MAVZULARI</span><h2>Yangi yozma topshiriqlar</h2>${topicsMarkup}</div></div>`;
-  $$('[data-community-question]', host).forEach((button) => button.addEventListener('click', answerCommunityQuestion));
+  $('[data-community-question]', host).forEach((button) => button.addEventListener('click', answerCommunityQuestion));
+  const topicRows = $('.community-grid > .panel:nth-child(2) .admin-row', host);
+  topicRows.forEach((row,index) => {
+    const topic=topics[index]; if (!topic) return;
+    const button=document.createElement('button');button.type='button';button.className='btn secondary';button.textContent='Esse yozish';
+    button.onclick=()=>{
+      const select=$('#essayTopic'); if (!select) return;
+      let option=[...select.options].find(o=>o.value==='community-'+topic.id);
+      if (!option){option=document.createElement('option');option.value='community-'+topic.id;select.append(option);}
+      option.textContent=topic.title;option.dataset.prompt=topic.prompt;select.value=option.value;
+      window.setRoute?.('essay');$('#essayBody')?.focus();
+    };
+    row.append(button);
+  });
 }
 
 function answerCommunityQuestion(event) {
@@ -900,8 +962,8 @@ async function adminCounts() {
   const [users, active, questions, topics] = await Promise.all([
     getCountFromServer(profiles),
     getCountFromServer(query(profiles, where('lastSeen', '>=', since))),
-    getCountFromServer(collection(STATE.db, 'contentQuestions')),
-    getCountFromServer(collection(STATE.db, 'contentEssayTopics'))
+    getCountFromServer(query(collection(STATE.db, 'contentQuestions'), where('published', '==', true))),
+    getCountFromServer(query(collection(STATE.db, 'contentEssayTopics'), where('published', '==', true)))
   ]);
   return {
     users: users.data().count,
@@ -918,14 +980,16 @@ function adminFormsMarkup() {
 async function renderAdmin() {
   const host = $('#adminContent');
   if (!host) return;
+  const adminUid = STATE.user?.uid;
   host.innerHTML = '<div class="panel"><p>Admin ma’lumotlari yuklanmoqda…</p></div>';
   try {
     const [counts, questionsSnapshot, topicsSnapshot, announcementSnapshot] = await Promise.all([
       adminCounts(),
-      getDocs(query(collection(STATE.db, 'contentQuestions'), limit(12))),
-      getDocs(query(collection(STATE.db, 'contentEssayTopics'), limit(12))),
+      getDocs(query(collection(STATE.db, 'contentQuestions'), where('published', '==', true), limit(100))),
+      getDocs(query(collection(STATE.db, 'contentEssayTopics'), where('published', '==', true), limit(100))),
       getDoc(doc(STATE.db, 'siteSettings', 'announcement'))
     ]);
+    if (STATE.user?.uid !== adminUid || !STATE.isAdmin || !STATE.adminUnlocked) return;
     const questions = questionsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
     const topics = topicsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
     const announcement = announcementSnapshot.exists() ? announcementSnapshot.data() : {};
@@ -955,21 +1019,19 @@ function bindAdminForms() {
     const button = $('button[type="submit"]', form);
     button.disabled = true;
     try {
-      await addDoc(collection(STATE.db, 'contentQuestions'), {
+      await adminMutation('question', {
         category: formValue(form, 'category'),
         question: formValue(form, 'question'),
         options: [0, 1, 2, 3].map((index) => formValue(form, `option${index}`)),
         correctIndex: asNumber(formValue(form, 'correctIndex')),
         explanation: formValue(form, 'explanation'),
         published: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
         createdBy: STATE.user.uid
       });
       notify('Yangi savol nashr qilindi. ✓');
       void renderAdmin();
-    } catch {
-      notify('Savolni saqlab bo‘lmadi.', true);
+    } catch (error) {
+      notify(error.message || 'Savolni saqlab bo‘lmadi.', true);
     } finally {
       button.disabled = false;
     }
@@ -980,18 +1042,16 @@ function bindAdminForms() {
     const button = $('button[type="submit"]', form);
     button.disabled = true;
     try {
-      await addDoc(collection(STATE.db, 'contentEssayTopics'), {
+      await adminMutation('essay', {
         title: formValue(form, 'title'),
         prompt: formValue(form, 'prompt'),
         published: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
         createdBy: STATE.user.uid
       });
       notify('Yangi esse mavzusi nashr qilindi. ✓');
       void renderAdmin();
-    } catch {
-      notify('Esse mavzusini saqlab bo‘lmadi.', true);
+    } catch (error) {
+      notify(error.message || 'Esse mavzusini saqlab bo‘lmadi.', true);
     } finally {
       button.disabled = false;
     }
@@ -1000,12 +1060,13 @@ function bindAdminForms() {
     event.preventDefault();
     const form = event.currentTarget;
     try {
-      await setDoc(doc(STATE.db, 'siteSettings', 'announcement'), {
+      await adminMutation('announcement', {
         message: formValue(form, 'message'),
         active: Boolean(new FormData(form).get('active')),
-        updatedAt: serverTimestamp(),
         updatedBy: STATE.user.uid
-      }, { merge: true });
+      });
+      $('#firebaseAnnouncementBanner')?.remove();
+      void placeAnnouncementBanner();
       notify('E’lon saqlandi. ✓');
     } catch {
       notify('E’lonni saqlab bo‘lmadi.', true);
@@ -1017,7 +1078,7 @@ function bindAdminForms() {
     const name = kind === 'question' ? 'savolni' : 'esse mavzusini';
     if (!window.confirm(`Bu ${name} o‘chiriladi. Davom etasizmi?`)) return;
     try {
-      await deleteDoc(doc(STATE.db, kind === 'question' ? 'contentQuestions' : 'contentEssayTopics', id));
+      await adminMutation('hide', { kind, id });
       notify('Material o‘chirildi.');
       void renderAdmin();
     } catch {
@@ -1057,6 +1118,21 @@ function bindResultsRoute() {
 
 async function begin() {
   injectStyles();
+  window.addEventListener('onatili:login', openModal);
+  window.addEventListener('onatili:close-modal', closeModal);
+  window.addEventListener('online', () => void flushPendingRecords());
+  document.addEventListener('onatili:ready', () => refreshAccountUi());
+  document.addEventListener('keydown', event => {
+    const modal = $('#authModal');
+    if (!modal || modal.hidden) return;
+    if (event.key === 'Escape') { event.preventDefault(); closeModal(); }
+    if (event.key === 'Tab') {
+      const controls = [...modal.querySelectorAll('button:not(:disabled),input:not(:disabled),a[href]')].filter(el => el.getClientRects().length);
+      const first=controls[0], last=controls[controls.length-1];
+      if (event.shiftKey && document.activeElement===first) {event.preventDefault();last?.focus();}
+      else if (!event.shiftKey && document.activeElement===last) {event.preventDefault();first?.focus();}
+    }
+  });
   setupElevenLabsVoice();
   ensureCommunityPage();
   bindResultsRoute();
@@ -1075,20 +1151,27 @@ async function begin() {
     patchNetworkCapture();
     refreshAccountUi();
     onAuthStateChanged(STATE.auth, async (user) => {
+      const revision = ++authRevision;
       STATE.user = user || null;
+      STATE.isAdmin = false; STATE.adminUnlocked = false;
+      $('#adminNav')?.remove(); $('#page-admin')?.remove();
+      if ($('#pageCrumb')?.textContent === 'Admin panel') window.setRoute?.('home');
+      closeModal(); refreshAccountUi();
       await updateAdminStatus();
-      await touchProfile();
-      await flushPendingRecords();
+      if (revision !== authRevision) return;
       refreshAccountUi();
       ensureAdminPage();
+      void touchProfile();
+      void flushPendingRecords();
       void placeAnnouncementBanner();
       if (isCurrentResultsPage()) void renderCloudResults();
     });
     STATE.contentReady = true;
     void placeAnnouncementBanner();
   } catch {
-    // The original site remains usable if Firebase cannot be initialized.
+    notify('Google xizmatini yuklab bo‘lmadi. Sahifani yangilab qayta urinib ko‘ring.', true);
   }
 }
 
 void begin();
+
