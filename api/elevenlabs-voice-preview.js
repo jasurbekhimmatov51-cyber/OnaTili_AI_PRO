@@ -2,13 +2,10 @@ const PREVIEW_TEXT = 'Assalomu alaykum. Men OnaTili AI ustoziman. Savollaringizg
 
 const VOICES = {
   george: { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', detail: 'Erkak · sokin va tushunarli ustoz', recommended: true },
-  rachel: { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', detail: 'Ayol · iliq va ifodali' },
   adam: { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam', detail: 'Erkak · ravon va tabiiy' },
   antoni: { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni', detail: 'Erkak · chuqurroq va xotirjam' },
   sarah: { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', detail: 'Ayol · aniq va samimiy' },
-  josh: { id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh', detail: 'Erkak · do‘stona va jonli' },
-  arnold: { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold', detail: 'Erkak · qat’iy va kuchli' },
-  domi: { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', detail: 'Ayol · ifodali va jonli' }
+  arnold: { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold', detail: 'Erkak · qat’iy va kuchli' }
 };
 
 function sendError(response, status, error) {
@@ -24,25 +21,6 @@ function publicVoice(voice, slug) {
   };
 }
 
-async function listAvailableVoices(apiKey) {
-  const upstream = await fetch('https://api.elevenlabs.io/v1/voices', {
-    headers: { accept: 'application/json', 'xi-api-key': apiKey }
-  });
-  if (!upstream.ok) {
-    console.error('ElevenLabs voice list failed', { status: upstream.status });
-    throw new Error('voice list unavailable');
-  }
-  const data = await upstream.json().catch(() => ({}));
-  const availableIds = new Set(
-    Array.isArray(data?.voices) ? data.voices.map((voice) => String(voice?.voice_id || '')) : []
-  );
-  const choices = Object.entries(VOICES)
-    .filter(([, voice]) => availableIds.has(voice.id))
-    .map(([slug, voice]) => publicVoice(voice, slug));
-  if (!choices.length && VOICES.george) choices.push(publicVoice(VOICES.george, 'george'));
-  return choices;
-}
-
 export default async function handler(request, response) {
   const apiKey = process.env.ELEVENLABS_API_KEY || '';
   if (!apiKey) {
@@ -52,13 +30,9 @@ export default async function handler(request, response) {
 
   const listMode = String(request.query?.list || '') === '1';
   if (request.method === 'GET' && listMode) {
-    try {
-      const voices = await listAvailableVoices(apiKey);
-      response.setHeader('cache-control', 'no-store, max-age=0');
-      response.status(200).json({ voices });
-    } catch {
-      sendError(response, 502, 'Ovozlar ro‘yxatini olib bo‘lmadi.');
-    }
+    const voices = Object.entries(VOICES).map(([slug, voice]) => publicVoice(voice, slug));
+    response.setHeader('cache-control', 'public, s-maxage=3600, stale-while-revalidate=86400');
+    response.status(200).json({ voices });
     return;
   }
 
