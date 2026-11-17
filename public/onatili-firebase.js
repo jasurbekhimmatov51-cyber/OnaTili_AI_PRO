@@ -215,11 +215,9 @@ function showAdminPasswordForm() {
       error.className = 'admin-password-status success';
     }
     button.textContent = 'Parol to‘g‘ri ✓';
-    window.setTimeout(() => {
-      closeModal();
-      openAdminPage();
-      notify('Admin panel ochildi. ✓');
-    }, 450);
+    closeModal();
+    openAdminPage();
+    notify('Parol to‘g‘ri. Admin panel ochildi. ✓');
   });
 }
 
@@ -565,6 +563,7 @@ function openAdminPage() {
     showAdminPasswordForm();
     return;
   }
+  closeModal();
   ensureAdminPage();
   activateCustomPage('page-admin', 'Admin panel');
   void renderAdmin();
