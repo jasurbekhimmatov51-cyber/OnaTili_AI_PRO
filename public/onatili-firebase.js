@@ -148,7 +148,7 @@ function injectStyles() {
     .community-grid,.admin-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.community-list,.admin-list{display:grid;gap:10px}.community-question{padding:16px;border-radius:16px;background:#18233f;border:1px solid #2b3b60}.community-question h3{font-size:16px;margin:0 0 12px}.community-options{display:grid;gap:8px}.community-option{padding:10px 12px;text-align:left;border-radius:10px;border:1px solid #34476f;background:#111a31;color:#d9e2f5;cursor:pointer}.community-option:hover{border-color:#a891ff}.community-option.correct{border-color:#43d39e;background:rgba(46,179,126,.18)}.community-option.wrong{border-color:#ff8793;background:rgba(207,61,83,.16)}.community-feedback{margin:10px 0 0;color:#b9c8eb;font-size:13px}
     .admin-nav-badge{margin-left:auto;background:#e9bc52;color:#202232;border-radius:7px;padding:2px 6px;font-size:10px;font-weight:800}.admin-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}.admin-card{padding:18px;border-radius:16px;background:#18233f;border:1px solid #2b3b60}.admin-card b{display:block;font-size:27px;color:#fff}.admin-card span{font-size:13px;color:#aeb9d5}.admin-form{display:grid;gap:11px}.admin-form label{display:grid;gap:6px;color:#b9c6e2;font-size:13px}.admin-form textarea{min-height:88px;resize:vertical}.admin-form .option-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.admin-row{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid rgba(130,145,185,.2)}.admin-row:last-child{border-bottom:0}.admin-row p{margin:4px 0 0;color:#9faccc;font-size:13px}.admin-delete{border:1px solid rgba(255,137,147,.55);background:transparent;color:#ffb3bb;border-radius:9px;padding:7px 10px;cursor:pointer;height:max-content}.admin-empty{padding:18px;color:#aeb9d5;text-align:center;border:1px dashed #40517a;border-radius:14px}
     .google-account-note{padding:12px;border-radius:12px;background:rgba(104,83,194,.17);color:#cfc9ff;font-size:13px;margin-top:13px}.auth-google-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#fff;color:#4285f4;font-weight:900;margin-right:8px}.google-account-actions{display:grid;gap:9px;margin-top:16px}.admin-password-status{min-height:20px;margin:0;font-size:13px;font-weight:700}.admin-password-status.error{color:#ff98a4}.admin-password-status.success{color:#72e5b4}
-    .elevenlabs-play{display:inline-flex;align-items:center;gap:7px;margin:12px 0 0;padding:7px 10px;border:1px solid rgba(177,155,255,.72);border-radius:10px;background:rgba(94,72,170,.24);color:#eeeaff;font:inherit;font-size:12px;font-weight:800;cursor:pointer}.elevenlabs-play:hover{background:rgba(131,101,224,.37)}.elevenlabs-play:disabled{opacity:.65;cursor:wait}.elevenlabs-play:focus-visible{outline:2px solid #b8a6ff;outline-offset:2px}
+    .elevenlabs-play{display:inline-flex;align-items:center;gap:7px;margin:12px 0 0;padding:7px 10px;border:1px solid rgba(177,155,255,.72);border-radius:10px;background:rgba(94,72,170,.24);color:#eeeaff;font:inherit;font-size:12px;font-weight:800;cursor:pointer}.elevenlabs-play:hover{background:rgba(131,101,224,.37)}.elevenlabs-play:disabled{opacity:.65;cursor:wait}.elevenlabs-play:focus-visible{outline:2px solid #b8a6ff;outline-offset:2px}.elevenlabs-picker{margin-top:18px}.elevenlabs-picker h3{margin:7px 0 4px;color:#fff}.elevenlabs-picker p{margin:0 0 13px;color:#aeb9d5;font-size:13px;line-height:1.5}.voice-preview-list{display:grid;gap:9px}.voice-preview-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px;border:1px solid rgba(132,151,199,.22);border-radius:13px;background:rgba(12,21,42,.48)}.voice-preview-row strong{display:block;color:#f4f1ff;font-size:14px}.voice-preview-row small{display:block;margin-top:3px;color:#aeb9d5;font-size:12px}.voice-preview-button{border:1px solid rgba(177,155,255,.72);border-radius:9px;background:rgba(94,72,170,.27);color:#f3efff;padding:7px 10px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}.voice-preview-button:hover,.voice-preview-button.selected{background:rgba(131,101,224,.48);border-color:#c1b1ff}.voice-preview-button:disabled{opacity:.68;cursor:wait}.voice-choice-badge{display:inline-block;margin-left:6px;padding:2px 5px;border-radius:5px;background:#4b3a9a;color:#e9e2ff;font-size:9px;font-weight:800;letter-spacing:.06em}@media(max-width:420px){.voice-preview-row{grid-template-columns:1fr}.voice-preview-button{width:100%}}
     @media(max-width:760px){.cloud-kpis,.admin-grid{grid-template-columns:1fr}.community-grid,.admin-layout{grid-template-columns:1fr}.admin-form .option-grid{grid-template-columns:1fr}.cloud-record{align-items:flex-start;flex-direction:column}.firebase-banner{align-items:flex-start}.firebase-banner button{margin-left:0}}
   `;
   document.head.append(style);
@@ -655,6 +655,83 @@ function setupElevenLabsVoice() {
   const note = $('#aiNote');
   if (note) note.textContent = 'AI Ustoz javoblari ElevenLabs o‘zbekcha ovozi bilan eshittiriladi. “Eshitish” tugmasi bilan istalgan javobni qayta tinglang.';
   setTutorVoiceStatus('🔊 ElevenLabs o‘zbekcha ovozi tayyor');
+  ensureTutorVoicePicker();
+}
+
+const TUTOR_VOICE_PREVIEWS = [
+  { slug: 'caleb', name: 'Caleb', detail: 'Erkak · sokin va ishonchli ustoz', recommended: true },
+  { slug: 'eddie', name: 'Eddie', detail: 'Erkak · tabiiy va yordamchi' },
+  { slug: 'finley', name: 'Finley', detail: 'Erkak · ravon va aniq' },
+  { slug: 'eldrin', name: 'Eldrin', detail: 'Erkak · chuqurroq, jiddiy' },
+  { slug: 'talia', name: 'Talia', detail: 'Ayol · muloyim va iliq' },
+  { slug: 'jade', name: 'Jade', detail: 'Ayol · quvnoq va tabiiy' },
+  { slug: 'alicia', name: 'Alicia', detail: 'Ayol · rasmiy va ravon' },
+  { slug: 'maisie', name: 'Maisie', detail: 'Ayol · samimiy va yoshroq' }
+];
+
+async function previewTutorVoice(slug, button) {
+  stopTutorVoice();
+  const requestId = TUTOR_TTS.requestId;
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Tayyorlanmoqda…';
+  try {
+    await unlockTutorVoice();
+    setTutorVoiceStatus('🔊 ' + (button.dataset.voiceName || 'Ovoz') + ' namunasi eshittirilmoqda…');
+    const response = await fetch('/api/elevenlabs-voice-preview?voice=' + encodeURIComponent(slug), {
+      cache: 'force-cache',
+      headers: { accept: 'audio/mpeg' }
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.error || 'Ovoz namunasi tayyor bo‘lmadi.');
+    }
+    const audio = await response.arrayBuffer();
+    if (requestId !== TUTOR_TTS.requestId) return;
+    await playTutorAudio(audio, requestId);
+    if (requestId === TUTOR_TTS.requestId) {
+      setTutorVoiceStatus('🔊 ' + (button.dataset.voiceName || 'Tanlangan ovoz') + ' namunasi tinglandi');
+      Array.from(document.querySelectorAll('.voice-preview-button')).forEach((node) => node.classList.toggle('selected', node === button));
+    }
+  } catch (error) {
+    if (requestId === TUTOR_TTS.requestId && error?.name !== 'AbortError') {
+      setTutorVoiceStatus('🔊 Namuna vaqtincha tayyor bo‘lmadi');
+      notify(error?.message || 'Ovoz namunasi tayyor bo‘lmadi.', true);
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+function ensureTutorVoicePicker() {
+  if ($('#elevenLabsVoicePicker')) return;
+  const side = $('.tutor-side');
+  if (!side) return;
+  const panel = document.createElement('section');
+  panel.id = 'elevenLabsVoicePicker';
+  panel.className = 'panel elevenlabs-picker';
+  panel.innerHTML = '<span class="eyebrow">ELEVENLABS OVOZLARI</span><h3>Ovozni tinglab tanlang</h3><p>Har biri bir xil o‘zbekcha namunani aytadi. Yoqgan ovoz nomini menga yozing — uni AI Ustozning doimiy ovozi qilaman.</p><div class="voice-preview-list"></div>';
+  const list = $('.voice-preview-list', panel);
+  for (const voice of TUTOR_VOICE_PREVIEWS) {
+    const row = document.createElement('div');
+    row.className = 'voice-preview-row';
+    const info = document.createElement('div');
+    info.innerHTML = '<strong>' + escapeHtml(voice.name) + (voice.recommended ? '<span class="voice-choice-badge">TAVSIYA</span>' : '') + '</strong><small>' + escapeHtml(voice.detail) + '</small>';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'voice-preview-button';
+    button.dataset.voicePreview = voice.slug;
+    button.dataset.voiceName = voice.name;
+    button.textContent = '🔊 Eshitish';
+    button.addEventListener('click', () => {
+      void unlockTutorVoice().catch(() => {});
+      void previewTutorVoice(voice.slug, button);
+    });
+    row.append(info, button);
+    list.append(row);
+  }
+  side.append(panel);
 }
 
 function activateCustomPage(pageId, crumb) {
