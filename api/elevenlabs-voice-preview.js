@@ -1,21 +1,67 @@
 const PREVIEW_TEXT = 'Assalomu alaykum. Men OnaTili AI ustoziman. Savollaringizga tushunarli va ravon javob beraman.';
 
 const VOICES = {
-  caleb: 'AaOhDHYJ1XLZk74lXhdE',
-  eddie: 'l7kNoIfnJKPg7779LI2t',
-  finley: 'fnYMz3F5gMEDGMWcH1ex',
-  eldrin: '6WwXjDDEMyNmFG95zycZ',
-  talia: 'OZ0L6eISlOejga3XjDFt',
-  jade: 'g7LVvkPWALzPxOQbF6OE',
-  alicia: 'BFd5oBc2DDna33pSi4Gf',
-  maisie: 'QtY3JBOUKEB5xzrRfOKc'
+  george: { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', detail: 'Erkak · sokin va tushunarli ustoz', recommended: true },
+  rachel: { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', detail: 'Ayol · iliq va ifodali' },
+  adam: { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam', detail: 'Erkak · ravon va tabiiy' },
+  antoni: { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni', detail: 'Erkak · chuqurroq va xotirjam' },
+  sarah: { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', detail: 'Ayol · aniq va samimiy' },
+  josh: { id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh', detail: 'Erkak · do‘stona va jonli' },
+  arnold: { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold', detail: 'Erkak · qat’iy va kuchli' },
+  domi: { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', detail: 'Ayol · ifodali va jonli' }
 };
 
 function sendError(response, status, error) {
   response.status(status).json({ error });
 }
 
+function publicVoice(voice, slug) {
+  return {
+    slug,
+    name: voice.name,
+    detail: voice.detail,
+    recommended: Boolean(voice.recommended)
+  };
+}
+
+async function listAvailableVoices(apiKey) {
+  const upstream = await fetch('https://api.elevenlabs.io/v1/voices', {
+    headers: { accept: 'application/json', 'xi-api-key': apiKey }
+  });
+  if (!upstream.ok) {
+    console.error('ElevenLabs voice list failed', { status: upstream.status });
+    throw new Error('voice list unavailable');
+  }
+  const data = await upstream.json().catch(() => ({}));
+  const availableIds = new Set(
+    Array.isArray(data?.voices) ? data.voices.map((voice) => String(voice?.voice_id || '')) : []
+  );
+  const choices = Object.entries(VOICES)
+    .filter(([, voice]) => availableIds.has(voice.id))
+    .map(([slug, voice]) => publicVoice(voice, slug));
+  if (!choices.length && VOICES.george) choices.push(publicVoice(VOICES.george, 'george'));
+  return choices;
+}
+
 export default async function handler(request, response) {
+  const apiKey = process.env.ELEVENLABS_API_KEY || '';
+  if (!apiKey) {
+    sendError(response, 503, 'Ovoz xizmati hali sozlanmagan.');
+    return;
+  }
+
+  const listMode = String(request.query?.list || '') === '1';
+  if (request.method === 'GET' && listMode) {
+    try {
+      const voices = await listAvailableVoices(apiKey);
+      response.setHeader('cache-control', 'no-store, max-age=0');
+      response.status(200).json({ voices });
+    } catch {
+      sendError(response, 502, 'Ovozlar ro‘yxatini olib bo‘lmadi.');
+    }
+    return;
+  }
+
   if (request.method !== 'GET') {
     response.setHeader('allow', 'GET');
     sendError(response, 405, 'Faqat GET so‘rovi qabul qilinadi.');
@@ -24,21 +70,15 @@ export default async function handler(request, response) {
 
   const requested = Array.isArray(request.query?.voice) ? request.query.voice[0] : request.query?.voice;
   const key = String(requested || '').toLowerCase();
-  const voiceId = VOICES[key];
-  if (!voiceId) {
+  const voice = VOICES[key];
+  if (!voice) {
     sendError(response, 404, 'Bunday ovoz topilmadi.');
-    return;
-  }
-
-  const apiKey = process.env.ELEVENLABS_API_KEY || '';
-  if (!apiKey) {
-    sendError(response, 503, 'Ovoz xizmati hali sozlanmagan.');
     return;
   }
 
   try {
     const upstream = await fetch(
-      'https://api.elevenlabs.io/v1/text-to-speech/' + voiceId + '/stream?output_format=mp3_44100_128',
+      'https://api.elevenlabs.io/v1/text-to-speech/' + voice.id + '/stream?output_format=mp3_44100_128',
       {
         method: 'POST',
         headers: {
