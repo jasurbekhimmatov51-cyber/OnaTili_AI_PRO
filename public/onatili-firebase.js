@@ -658,16 +658,7 @@ function setupElevenLabsVoice() {
   ensureTutorVoicePicker();
 }
 
-const TUTOR_VOICE_PREVIEWS = [
-  { slug: 'caleb', name: 'Caleb', detail: 'Erkak · sokin va ishonchli ustoz', recommended: true },
-  { slug: 'eddie', name: 'Eddie', detail: 'Erkak · tabiiy va yordamchi' },
-  { slug: 'finley', name: 'Finley', detail: 'Erkak · ravon va aniq' },
-  { slug: 'eldrin', name: 'Eldrin', detail: 'Erkak · chuqurroq, jiddiy' },
-  { slug: 'talia', name: 'Talia', detail: 'Ayol · muloyim va iliq' },
-  { slug: 'jade', name: 'Jade', detail: 'Ayol · quvnoq va tabiiy' },
-  { slug: 'alicia', name: 'Alicia', detail: 'Ayol · rasmiy va ravon' },
-  { slug: 'maisie', name: 'Maisie', detail: 'Ayol · samimiy va yoshroq' }
-];
+let TUTOR_VOICE_PREVIEWS = [];
 
 async function previewTutorVoice(slug, button) {
   stopTutorVoice();
@@ -704,16 +695,15 @@ async function previewTutorVoice(slug, button) {
   }
 }
 
-function ensureTutorVoicePicker() {
-  if ($('#elevenLabsVoicePicker')) return;
-  const side = $('.tutor-side');
-  if (!side) return;
-  const panel = document.createElement('section');
-  panel.id = 'elevenLabsVoicePicker';
-  panel.className = 'panel elevenlabs-picker';
-  panel.innerHTML = '<span class="eyebrow">ELEVENLABS OVOZLARI</span><h3>Ovozni tinglab tanlang</h3><p>Har biri bir xil o‘zbekcha namunani aytadi. Yoqgan ovoz nomini menga yozing — uni AI Ustozning doimiy ovozi qilaman.</p><div class="voice-preview-list"></div>';
-  const list = $('.voice-preview-list', panel);
-  for (const voice of TUTOR_VOICE_PREVIEWS) {
+function renderTutorVoiceOptions(voices) {
+  const list = $('#elevenLabsVoicePicker .voice-preview-list');
+  if (!list) return;
+  if (!voices.length) {
+    list.innerHTML = '<p>Hozircha tinglash uchun ochiq ovoz topilmadi. ElevenLabs hisobidagi ovozlarni tekshirib qayta urinib ko‘ring.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const voice of voices) {
     const row = document.createElement('div');
     row.className = 'voice-preview-row';
     const info = document.createElement('div');
@@ -731,7 +721,33 @@ function ensureTutorVoicePicker() {
     row.append(info, button);
     list.append(row);
   }
+}
+
+async function loadTutorVoiceOptions() {
+  const list = $('#elevenLabsVoicePicker .voice-preview-list');
+  if (!list) return;
+  list.innerHTML = '<p>Ochiq ovozlar tekshirilmoqda…</p>';
+  try {
+    const response = await fetch('/api/elevenlabs-voice-preview?list=1', { cache: 'no-store' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || 'Ovozlar ro‘yxatini olib bo‘lmadi.');
+    TUTOR_VOICE_PREVIEWS = Array.isArray(data?.voices) ? data.voices : [];
+    renderTutorVoiceOptions(TUTOR_VOICE_PREVIEWS);
+  } catch (error) {
+    list.innerHTML = '<p>Ovozlar ro‘yxati vaqtincha yuklanmadi. Sahifani yangilab qayta urinib ko‘ring.</p>';
+  }
+}
+
+function ensureTutorVoicePicker() {
+  if ($('#elevenLabsVoicePicker')) return;
+  const side = $('.tutor-side');
+  if (!side) return;
+  const panel = document.createElement('section');
+  panel.id = 'elevenLabsVoicePicker';
+  panel.className = 'panel elevenlabs-picker';
+  panel.innerHTML = '<span class="eyebrow">ELEVENLABS OVOZLARI</span><h3>Ovozni tinglab tanlang</h3><p>Har biri bir xil o‘zbekcha namunani aytadi. Faqat hisobingizda ishlaydigan ovozlar chiqariladi. Yoqgan ovoz nomini menga yozing — uni AI Ustozning doimiy ovozi qilaman.</p><div class="voice-preview-list"><p>Ochiq ovozlar tekshirilmoqda…</p></div>';
   side.append(panel);
+  void loadTutorVoiceOptions();
 }
 
 function activateCustomPage(pageId, crumb) {
