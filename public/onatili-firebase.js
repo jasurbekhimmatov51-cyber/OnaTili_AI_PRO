@@ -571,7 +571,7 @@ async function speakTutorWithElevenLabs(value, button = null) {
 
 function tutorBubbleText(bubble) {
   const copy = bubble.cloneNode(true);
-  $('.bubble-name, .elevenlabs-play', copy).forEach((node) => node.remove());
+  Array.from(copy.querySelectorAll('.bubble-name, .elevenlabs-play')).forEach((node) => node.remove());
   return tutorVoiceText(copy.textContent);
 }
 
@@ -624,7 +624,7 @@ function setupElevenLabsVoice() {
   }
   window.__onatiliElevenLabsReady = true;
   muteBrowserTutorSpeech();
-  $('.chat-bubble.tutor', messages).forEach((bubble) => attachTutorVoiceButton(bubble));
+  Array.from(messages.querySelectorAll('.chat-bubble.tutor')).forEach((bubble) => attachTutorVoiceButton(bubble));
   TUTOR_TTS.observer = new MutationObserver((records) => {
     for (const record of records) {
       for (const node of record.addedNodes) {
