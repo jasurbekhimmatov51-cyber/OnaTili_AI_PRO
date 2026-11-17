@@ -148,6 +148,7 @@ function injectStyles() {
     .community-grid,.admin-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.community-list,.admin-list{display:grid;gap:10px}.community-question{padding:16px;border-radius:16px;background:#18233f;border:1px solid #2b3b60}.community-question h3{font-size:16px;margin:0 0 12px}.community-options{display:grid;gap:8px}.community-option{padding:10px 12px;text-align:left;border-radius:10px;border:1px solid #34476f;background:#111a31;color:#d9e2f5;cursor:pointer}.community-option:hover{border-color:#a891ff}.community-option.correct{border-color:#43d39e;background:rgba(46,179,126,.18)}.community-option.wrong{border-color:#ff8793;background:rgba(207,61,83,.16)}.community-feedback{margin:10px 0 0;color:#b9c8eb;font-size:13px}
     .admin-nav-badge{margin-left:auto;background:#e9bc52;color:#202232;border-radius:7px;padding:2px 6px;font-size:10px;font-weight:800}.admin-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}.admin-card{padding:18px;border-radius:16px;background:#18233f;border:1px solid #2b3b60}.admin-card b{display:block;font-size:27px;color:#fff}.admin-card span{font-size:13px;color:#aeb9d5}.admin-form{display:grid;gap:11px}.admin-form label{display:grid;gap:6px;color:#b9c6e2;font-size:13px}.admin-form textarea{min-height:88px;resize:vertical}.admin-form .option-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.admin-row{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid rgba(130,145,185,.2)}.admin-row:last-child{border-bottom:0}.admin-row p{margin:4px 0 0;color:#9faccc;font-size:13px}.admin-delete{border:1px solid rgba(255,137,147,.55);background:transparent;color:#ffb3bb;border-radius:9px;padding:7px 10px;cursor:pointer;height:max-content}.admin-empty{padding:18px;color:#aeb9d5;text-align:center;border:1px dashed #40517a;border-radius:14px}
     .google-account-note{padding:12px;border-radius:12px;background:rgba(104,83,194,.17);color:#cfc9ff;font-size:13px;margin-top:13px}.auth-google-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#fff;color:#4285f4;font-weight:900;margin-right:8px}.google-account-actions{display:grid;gap:9px;margin-top:16px}.admin-password-status{min-height:20px;margin:0;font-size:13px;font-weight:700}.admin-password-status.error{color:#ff98a4}.admin-password-status.success{color:#72e5b4}
+    .elevenlabs-play{display:inline-flex;align-items:center;gap:7px;margin:12px 0 0;padding:7px 10px;border:1px solid rgba(177,155,255,.72);border-radius:10px;background:rgba(94,72,170,.24);color:#eeeaff;font:inherit;font-size:12px;font-weight:800;cursor:pointer}.elevenlabs-play:hover{background:rgba(131,101,224,.37)}.elevenlabs-play:disabled{opacity:.65;cursor:wait}.elevenlabs-play:focus-visible{outline:2px solid #b8a6ff;outline-offset:2px}
     @media(max-width:760px){.cloud-kpis,.admin-grid{grid-template-columns:1fr}.community-grid,.admin-layout{grid-template-columns:1fr}.admin-form .option-grid{grid-template-columns:1fr}.cloud-record{align-items:flex-start;flex-direction:column}.firebase-banner{align-items:flex-start}.firebase-banner button{margin-left:0}}
   `;
   document.head.append(style);
@@ -423,6 +424,237 @@ function patchNetworkCapture() {
     }
     return response;
   };
+}
+
+
+const TUTOR_TTS = {
+  context: null,
+  source: null,
+  controller: null,
+  requestId: 0,
+  armed: false,
+  armedUntil: 0,
+  observer: null
+};
+
+function setTutorVoiceStatus(message) {
+  const status = $('#voiceSupport');
+  if (status) status.textContent = message;
+}
+
+function tutorVoiceText(value) {
+  return String(value || '')
+    .replace(/ONA\s*TILI\s*AI/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function splitTutorVoiceText(value, maximum = 820) {
+  let remaining = tutorVoiceText(value);
+  const chunks = [];
+  while (remaining) {
+    if (remaining.length <= maximum) {
+      chunks.push(remaining);
+      break;
+    }
+    let cut = Math.max(
+      remaining.lastIndexOf('. ', maximum),
+      remaining.lastIndexOf('? ', maximum),
+      remaining.lastIndexOf('! ', maximum),
+      remaining.lastIndexOf('; ', maximum),
+      remaining.lastIndexOf(', ', maximum)
+    );
+    if (cut < Math.floor(maximum * 0.45)) cut = maximum;
+    else cut += 1;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+  return chunks.filter(Boolean);
+}
+
+function getTutorAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!TUTOR_TTS.context) TUTOR_TTS.context = new AudioContextClass();
+  return TUTOR_TTS.context;
+}
+
+async function unlockTutorVoice() {
+  const context = getTutorAudioContext();
+  if (context?.state === 'suspended') await context.resume();
+  return context;
+}
+
+function stopTutorVoice() {
+  TUTOR_TTS.requestId += 1;
+  TUTOR_TTS.controller?.abort();
+  TUTOR_TTS.controller = null;
+  if (TUTOR_TTS.source) {
+    try {
+      TUTOR_TTS.source.onended = null;
+      TUTOR_TTS.source.stop(0);
+    } catch {
+      // The source may have ended already.
+    }
+  }
+  TUTOR_TTS.source = null;
+}
+
+async function requestTutorAudio(text, signal) {
+  const response = await fetch('/api/elevenlabs-tts', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'audio/mpeg' },
+    body: JSON.stringify({ text }),
+    signal
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data?.error || 'Ovoz tayyorlab bo‘lmadi.');
+  }
+  return response.arrayBuffer();
+}
+
+async function playTutorAudio(buffer, requestId) {
+  const context = await unlockTutorVoice();
+  if (!context) throw new Error('Bu brauzerda audio ijrosi qo‘llanmaydi.');
+  const decoded = await context.decodeAudioData(buffer.slice(0));
+  if (requestId !== TUTOR_TTS.requestId) return;
+  await new Promise((resolve) => {
+    const source = context.createBufferSource();
+    source.buffer = decoded;
+    source.connect(context.destination);
+    source.onended = () => {
+      if (TUTOR_TTS.source === source) TUTOR_TTS.source = null;
+      resolve();
+    };
+    TUTOR_TTS.source = source;
+    source.start(0);
+  });
+}
+
+async function speakTutorWithElevenLabs(value, button = null) {
+  const text = tutorVoiceText(value);
+  if (!text) return;
+  stopTutorVoice();
+  const requestId = TUTOR_TTS.requestId;
+  const chunks = splitTutorVoiceText(text);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Ovoz tayyorlanmoqda…';
+  }
+  try {
+    await unlockTutorVoice();
+    for (let index = 0; index < chunks.length; index += 1) {
+      if (requestId !== TUTOR_TTS.requestId) return;
+      const controller = new AbortController();
+      TUTOR_TTS.controller = controller;
+      setTutorVoiceStatus('🔊 ElevenLabs o‘qiyapti… (' + (index + 1) + '/' + chunks.length + ')');
+      const audio = await requestTutorAudio(chunks[index], controller.signal);
+      if (requestId !== TUTOR_TTS.requestId) return;
+      await playTutorAudio(audio, requestId);
+    }
+    if (requestId === TUTOR_TTS.requestId) {
+      setTutorVoiceStatus('🔊 ElevenLabs o‘zbekcha ovozi tayyor');
+    }
+  } catch (error) {
+    if (requestId === TUTOR_TTS.requestId && error?.name !== 'AbortError') {
+      setTutorVoiceStatus('🔊 Ovoz vaqtincha tayyor bo‘lmadi');
+      notify(error?.message || 'Ovoz tayyorlab bo‘lmadi.', true);
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = '🔊 Qayta eshitish';
+    }
+  }
+}
+
+function tutorBubbleText(bubble) {
+  const copy = bubble.cloneNode(true);
+  $('.bubble-name, .elevenlabs-play', copy).forEach((node) => node.remove());
+  return tutorVoiceText(copy.textContent);
+}
+
+function attachTutorVoiceButton(bubble) {
+  if (!bubble || bubble.dataset.elevenlabsReady === 'true') return;
+  const text = tutorBubbleText(bubble);
+  if (!text || /^Javob tayyorlanmoqda/i.test(text)) return;
+  bubble.dataset.elevenlabsReady = 'true';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'elevenlabs-play';
+  button.textContent = '🔊 Eshitish';
+  button.setAttribute('aria-label', 'Ona Tili AI javobini ElevenLabs ovozida eshitish');
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void unlockTutorVoice().catch(() => {});
+    void speakTutorWithElevenLabs(tutorBubbleText(bubble), button);
+  });
+  bubble.append(button);
+  return { text, button };
+}
+
+function armTutorVoice() {
+  TUTOR_TTS.armed = true;
+  TUTOR_TTS.armedUntil = Date.now() + 45000;
+  void unlockTutorVoice().catch(() => {});
+}
+
+function muteBrowserTutorSpeech() {
+  if (!window.speechSynthesis || window.__onatiliElevenLabsSpeechPatched) return;
+  try {
+    const nativeSpeak = window.speechSynthesis.speak.bind(window.speechSynthesis);
+    window.speechSynthesis.speak = (...argumentsList) => {
+      if ($('#page-tutor') && $('#readAloud')?.checked) return undefined;
+      return nativeSpeak(...argumentsList);
+    };
+    window.__onatiliElevenLabsSpeechPatched = true;
+  } catch {
+    // If the browser protects this method, the ElevenLabs button remains available.
+  }
+}
+
+function setupElevenLabsVoice() {
+  if (window.__onatiliElevenLabsReady) return;
+  const messages = $('#chatMessages');
+  if (!messages) {
+    window.setTimeout(setupElevenLabsVoice, 120);
+    return;
+  }
+  window.__onatiliElevenLabsReady = true;
+  muteBrowserTutorSpeech();
+  $('.chat-bubble.tutor', messages).forEach((bubble) => attachTutorVoiceButton(bubble));
+  TUTOR_TTS.observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element) || !node.matches('.chat-bubble.tutor')) continue;
+        const prepared = attachTutorVoiceButton(node);
+        if (!prepared || !TUTOR_TTS.armed || Date.now() > TUTOR_TTS.armedUntil) continue;
+        if (!$('#readAloud')?.checked) continue;
+        TUTOR_TTS.armed = false;
+        void speakTutorWithElevenLabs(prepared.text, prepared.button);
+      }
+    }
+  });
+  TUTOR_TTS.observer.observe(messages, { childList: true });
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('#sendChat, #quickQuiz, #quickExample, .prompt-btn, #voiceBtn')) armTutorVoice();
+  }, true);
+  $('#chatInput')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) armTutorVoice();
+  }, true);
+  $('#readAloud')?.addEventListener('change', (event) => {
+    if (!event.currentTarget.checked) {
+      stopTutorVoice();
+      setTutorVoiceStatus('🔇 Ovoz o‘chirildi');
+    } else {
+      setTutorVoiceStatus('🔊 ElevenLabs o‘zbekcha ovozi yoqildi');
+    }
+  });
+  const note = $('#aiNote');
+  if (note) note.textContent = 'AI Ustoz javoblari ElevenLabs o‘zbekcha ovozi bilan eshittiriladi. “Eshitish” tugmasi bilan istalgan javobni qayta tinglang.';
+  setTutorVoiceStatus('🔊 ElevenLabs o‘zbekcha ovozi tayyor');
 }
 
 function activateCustomPage(pageId, crumb) {
@@ -732,6 +964,7 @@ function bindResultsRoute() {
 
 async function begin() {
   injectStyles();
+  setupElevenLabsVoice();
   ensureCommunityPage();
   bindResultsRoute();
   let settings;
