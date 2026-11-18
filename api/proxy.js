@@ -1,6 +1,6 @@
 const UPSTREAM_ORIGIN = 'https://onatili-ai-preview-jasurbek.stunningmarmalade1.chatgpt.site';
 const PUBLIC_ORIGIN = 'https://onatili-ai.vercel.app';
-const CLIENT_SCRIPT = '/onatili-firebase.js?v=audit-20261117';
+const CLIENT_SCRIPT = '/onatili-firebase.js?v=audit-20261118';
 const OMIT = new Set(['content-length','content-encoding','transfer-encoding','connection','set-cookie','etag','last-modified','server']);
 export function upstreamUrl(request) {
   const current = new URL(request.url);

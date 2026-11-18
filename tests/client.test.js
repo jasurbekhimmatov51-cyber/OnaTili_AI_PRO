@@ -35,3 +35,38 @@ test('modal close wins over CSS display and remains keyboard accessible',()=>{
   const modal={hidden:false,style,setAttribute(k,v){this[k]=v;},contains:()=>false};
   s.nodes.set('#authModal',modal);s.run('closeModal()');assert.equal(modal.hidden,true);assert.equal(style.display,'none');assert.equal(style.priority,'important');assert.equal(modal['aria-hidden'],'true');
 });
+
+test('community renders an empty list and binds every published question and essay action',async()=>{
+  const s=sandbox();
+  const listeners=[], appended=[];
+  let populated=false;
+  const questions=[{id:'q1',question:'Sinov savoli',options:['A','B','C','D'],correctIndex:1}];
+  const topics=[{id:'t1',title:'Sinov mavzusi',prompt:'Ikki qarashni solishtiring.'}];
+  s.nodes.set('#communityContent',{
+    innerHTML:'',
+    querySelector:()=>null,
+    querySelectorAll(selector){
+      if(!populated)return [];
+      if(selector==='[data-community-question]')return Array.from({length:4},()=>({addEventListener:(type,fn)=>listeners.push({type,fn})}));
+      return [{append:button=>appended.push(button)}];
+    }
+  });
+  s.context.published=()=>({questions:populated?questions:[],topics:populated?topics:[],announcement:null});
+  s.run('readPublishedContent=async()=>published()');
+  await s.run('renderCommunity()');
+  assert.match(s.nodes.get('#communityContent').innerHTML,/Hozircha yangi esse mavzusi yo‘q/);
+  populated=true;
+  s.context.document.createElement=()=>({dataset:{}});
+  const select={options:[],append(option){this.options.push(option)}};
+  s.nodes.set('#essayTopic',select);
+  let route;
+  s.context.window.setRoute=value=>{route=value};
+  await s.run('renderCommunity()');
+  assert.equal(listeners.length,4);
+  assert.ok(listeners.every(item=>item.type==='click'&&typeof item.fn==='function'));
+  assert.equal(appended.length,1);
+  appended[0].onclick();
+  assert.equal(route,'essay');
+  assert.equal(select.value,'community-t1');
+  assert.equal(select.options[0].dataset.prompt,topics[0].prompt);
+});

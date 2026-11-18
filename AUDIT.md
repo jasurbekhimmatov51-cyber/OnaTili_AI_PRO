@@ -1,4 +1,4 @@
-# OnaTili AI audit — 17 November 2026
+# OnaTili AI audit — 17–18 November 2026
 
 Scope: production Vercel frontend/integration, upstream Sites Worker and D1 learning API. Existing content and records are preserved.
 
@@ -23,18 +23,23 @@ Scope: production Vercel frontend/integration, upstream Sites Worker and D1 lear
 | Microphone repeated interim words | Rebuild transcript from the recognition result set |
 | Local tutor ignored quiz answers | Last-question checking; honest limitation message for unsupported general questions |
 | Proxy forwarded cookies and identity headers | Small request-header allowlist, removed upstream cookies/validators, private response no-store, bounded timeout |
-| Function region did not match requested Europe | Vercel functions configured for Frankfurt |
+| Function region did not match requested Europe | Project default and deployment explicitly set to Frankfurt; production `x-vercel-id` confirmed `fra1` |
+| Community page crashed on empty content and did not wire published actions | Correct collection selectors; regression check covers empty lists, four answer controls, and opening an essay topic |
+| Community essay topic disappeared after a reload | Draft now preserves the custom topic title and prompt together with its text |
 
 ## Checks
 
-- Worker suite: 7 tests, actual SQLite-backed D1 adapter, includes 45-question mock.
-- Integration/security/client suite: 9 tests, including signed/forged Firebase tokens, admin cookie expiry, cancelled audio, queue concurrency and account isolation.
+- Worker/draft suite: 8 tests, actual SQLite-backed D1 adapter, includes 45-question mock and community essay draft restoration.
+- Integration/security/client suite: 10 tests, including signed/forged Firebase tokens, admin cookie expiry, cancelled audio, queue concurrency, account isolation and community actions.
 - JavaScript syntax checks for changed modules.
-- Public browser smoke checks are performed after publication; authenticated Google/admin/audio checks require a signed-in account.
+- Live browser checks: mini test completed with 1 correct, 1 wrong, 8 skipped; history showed the result; lesson answer checked and completion saved; a 131-word essay returned an explicitly approximate 18/24 analysis; local tutor accepted B for its xursand question and explained the answer; login modal closed via Escape and its close button.
+- Google sign-in reached the genuine Google account chooser for the Firebase project. The available account was signed out, so signed-in admin publishing, Firestore synchronization and actual ElevenLabs playback have not been verified in this browser.
+- Production health, voice catalog, robots.txt and sitemap responded successfully. The health response reports `ai_configured: false`.
+- Vercel runtime error/fatal scan for the five-minute window after the Frankfurt deployment returned no logs; this is a bounded check, not ongoing monitoring.
 
 ## Remaining service limitations
 
-- No general-purpose AI API key was found in Vercel configuration. Existing upstream bootstrap controls whether the live AI provider is available. Local tutor and heuristic essay scoring are explicitly labelled; the essay score is not an official exam score.
+- No general-purpose AI API key was found in Vercel configuration, and the upstream service reports it is unconfigured. Local tutor and heuristic essay scoring are explicitly labelled; the essay score is not an official exam score. A real AI provider must be configured in the Sites Worker environment before general AI chat can work.
 - Firestore rules remain the final data-access boundary. No service-account bypass was added; requests keep the user's token. We did not obtain deployment access to Firestore rules for a rules audit.
 - Rate limits in this repository are per function instance, not durable account-wide billing quotas. ElevenLabs account credit limits remain necessary.
 - Search indexing and position are controlled by Google, not by deployment. robots.txt, sitemap and verification metadata are retained.

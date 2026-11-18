@@ -895,8 +895,8 @@ async function renderCommunity() {
     ? topics.map((item) => `<div class="admin-row"><div><strong>${escapeHtml(item.title || 'Esse mavzusi')}</strong><p>${escapeHtml(item.prompt || '')}</p></div></div>`).join('')
     : '<p>Hozircha yangi esse mavzusi yo‘q.</p>';
   host.innerHTML = `${banner}<div class="community-hero"><span class="eyebrow purple">DOIM YANGILANADI</span><h2>Yangi ehtimoliy savollar</h2><p>Bu bo‘lim admin tomonidan qo‘shilgan mashq savollari va esse mavzularini ko‘rsatadi.</p></div><div class="community-grid"><div class="panel"><span class="eyebrow">MINI MASHQ</span><h2>Yangi savollar</h2><div class="community-list">${questionsMarkup}</div></div><div class="panel"><span class="eyebrow">ESSE MAVZULARI</span><h2>Yangi yozma topshiriqlar</h2>${topicsMarkup}</div></div>`;
-  $('[data-community-question]', host).forEach((button) => button.addEventListener('click', answerCommunityQuestion));
-  const topicRows = $('.community-grid > .panel:nth-child(2) .admin-row', host);
+  $$('[data-community-question]', host).forEach((button) => button.addEventListener('click', answerCommunityQuestion));
+  const topicRows = $$('.community-grid > .panel:nth-child(2) .admin-row', host);
   topicRows.forEach((row,index) => {
     const topic=topics[index]; if (!topic) return;
     const button=document.createElement('button');button.type='button';button.className='btn secondary';button.textContent='Esse yozish';
@@ -905,7 +905,7 @@ async function renderCommunity() {
       let option=[...select.options].find(o=>o.value==='community-'+topic.id);
       if (!option){option=document.createElement('option');option.value='community-'+topic.id;select.append(option);}
       option.textContent=topic.title;option.dataset.prompt=topic.prompt;select.value=option.value;
-      window.setRoute?.('essay');$('#essayBody')?.focus();
+      window.updateEssayWords?.();window.setRoute?.('essay');$('#essayBody')?.focus();
     };
     row.append(button);
   });

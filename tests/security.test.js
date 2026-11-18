@@ -54,5 +54,5 @@ test('proxy does not forward identity, cookies, authorization, or arbitrary doma
   const request=new Request('https://example.test/api/proxy?path=api/me',{headers:{authorization:'Bearer secret',cookie:'private=secret','oai-authenticated-user-id':'spoof','x-onatili-visitor':'v_abc',accept:'application/json'}});
   const headers=forwardedHeaders(request);assert.equal(headers.get('authorization'),null);assert.equal(headers.get('cookie'),null);assert.equal(headers.get('oai-authenticated-user-id'),null);
   assert.equal(headers.get('x-onatili-visitor'),'v_abc');assert.equal(upstreamUrl(request).pathname,'/api/me');
-  const html=transformHtml('<html><head></head><body></body></html>');assert.match(html,/ONATILI_FIREBASE=true/);assert.match(html,/audit-20261117/);
+  const html=transformHtml('<html><head></head><body></body></html>');assert.match(html,/ONATILI_FIREBASE=true/);assert.match(html,/audit-20261118/);
 });
