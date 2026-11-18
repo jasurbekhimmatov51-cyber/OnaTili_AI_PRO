@@ -7,6 +7,7 @@ import admin from '../api/admin-unlock.js';
 import tts from '../api/elevenlabs-tts.js';
 import preview from '../api/elevenlabs-voice-preview.js';
 import { forwardedHeaders, transformHtml, upstreamUrl } from '../api/proxy.js';
+import { synthesize, VOICES } from '../lib/speech.js';
 const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
 const clock=Math.floor(Date.now()/1000);
 const claims={sub:'owner123',aud:'test-project',iss:'https://securetoken.google.com/test-project',iat:clock,auth_time:clock,exp:clock+3600,email:'owner@example.test',email_verified:true,firebase:{sign_in_provider:'google.com'}};
@@ -49,6 +50,11 @@ test('voice endpoints reject anonymous cost-generating requests and prototype vo
   let res=response();await tts({method:'POST',headers:{},body:{text:'Salom'}},res);assert.equal(res.code,401);
   res=response();await preview({method:'GET',headers:{},query:{voice:'constructor'}},res);assert.equal(res.code,404);
   res=response();await preview({method:'GET',headers:{},query:{list:'1'}},res);assert.equal(res.data.voices.length,5);
+});
+test('speech retries a rejected optional v3 configuration with a minimal Uzbek-capable request',async()=>{
+  const original=globalThis.fetch;process.env.ELEVENLABS_API_KEY='test-key';const bodies=[];
+  globalThis.fetch=async(_url,options)=>{bodies.push(JSON.parse(options.body));return bodies.length===1?Response.json({detail:{code:'invalid_request',param:'voice_settings'}},{status:400}):new Response(Buffer.from('mp3'),{headers:{'content-type':'audio/mpeg'}})};
+  try{const audio=await synthesize('Assalomu alaykum',VOICES.george);assert.equal(audio.toString(),'mp3');assert.equal(bodies.length,2);assert.equal(bodies[0].language_code,'uz');assert.equal(bodies[1].language_code,undefined);assert.equal(bodies[1].voice_settings,undefined);}finally{globalThis.fetch=original;}
 });
 test('proxy does not forward identity, cookies, authorization, or arbitrary domains',()=>{
   const request=new Request('https://example.test/api/proxy?path=api/me',{headers:{authorization:'Bearer secret',cookie:'private=secret','oai-authenticated-user-id':'spoof','x-onatili-visitor':'v_abc',accept:'application/json'}});
